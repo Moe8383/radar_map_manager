@@ -160,6 +160,7 @@ elements:
 #### 3. 雷达监测区域设置
 
 ![LAYOUT](images/layout_monitor.png)
+![LAYOUT](images/layout_monitor_exam_1.png)
 
 * 通过面板或底图选中某个雷达，点击面板 Monitor 按钮，进入该雷达的监测区域设置
 
@@ -180,6 +181,8 @@ elements:
 
 #### 1. Detect Trigger 区域
 
+![ZONE](images/zones_exam_1.png)
+
 * 编辑操作与 Monitor 区域相同
 
 * 支持设置目标进入延时，在 Dly 中输入延时时间（单位：s），用于避免雷达目标异常导致误报
@@ -188,6 +191,8 @@ elements:
 
 
 #### 2. Detect Exclude 区域
+
+![ZONE](images/zones_exam_2.png)
 
 * 编辑操作与 Monitor 区域相同
 
