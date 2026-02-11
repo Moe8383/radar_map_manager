@@ -4,7 +4,7 @@
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 
-> 🇺🇸 [English Documentation](README.md) | 🇨🇳 中文文档
+> 🇺🇸 [English Documentation](README.md) | 🇨🇳 **中文文档**
 
 **Radar Map Manager (RMM)** 是专为 Home Assistant 打造的毫米波雷达可视化与数据融合集成。
 
@@ -216,11 +216,11 @@ elements:
 
 ![SET](images/set_1.png)
 
-* `Updata`: 雷达目标刷新频率
+* `Update`: 雷达目标刷新频率
 
 * `Merge`: 雷达目标融合距离（单位：米）。小于该距离的不同雷达目标将被合并为一个。
 
-* `Tgt H`: 目标质心高度，用于3D矫正
+* `Tgt_H`: 目标质心高度，用于3D矫正
 
 * `Color`: 自定义融合目标的显示颜色
 
