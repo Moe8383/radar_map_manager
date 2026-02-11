@@ -68,7 +68,7 @@ RMM is compatible with any millimeter-wave radar integrated into Home Assistant 
 ### Method 1: HACS Automatic Installation (Recommended)
 1.  Open HACS -> Integrations.
 2.  Click the top-right menu -> **Custom repositories**.
-3.  Enter the repository URL: `https://github.com/Moe8383/radar_map_manager_repo`, select category **Integration**.
+3.  Enter the repository URL: `https://github.com/Moe8383/radar_map_manager`, select category **Integration**.
 4.  Search for "Radar Map Manager" and click install.
 5.  Restart Home Assistant.
 
