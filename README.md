@@ -230,7 +230,7 @@ If you find this project helpful, please give it a **⭐️ Star**！
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/moe8383)
 [![支持我](https://img.shields.io/badge/赞助-爱发电-af46a1?style=for-the-badge&logo=alipay&logoColor=white)](https://afdian.com/a/moe8383)
 
-* **Bug Reports: Please submit an [Issue](https://github.com/Moe8383/radar_map_manager_repo/issues)。
+* Bug Reports: Please submit an [Issue](https://github.com/Moe8383/radar_map_manager_repo/issues)。
 
 License: MIT
 
