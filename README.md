@@ -151,7 +151,7 @@ Click `Layout` in the panel to enter radar layout mode. Targets displayed here a
 
 * Scale Adjustment: Stand within the radar's detection range (preferably away from the center line and try multiple positions). Use a combination of these methods to match radar targets with the floor plan:
   
-  * 1（recommend). Click the `Freeze` button. This locks the first target detected by the radar. Manually drag this target to your actual standing position on the floor plan, and the system will automatically calculate the scale.
+  * 1（Recommended). Click the `Freeze` button. This locks the first target detected by the radar. Manually drag this target to your actual standing position on the floor plan, and the system will automatically calculate the scale.
   * 2. Adjust `ScX` and `ScY` sliders to change the `X`/`Y` coordinate scaling.
   * 3. Click `Ax` / `Ay` to automatically adjust based on the background image aspect ratio (reference only).
   
