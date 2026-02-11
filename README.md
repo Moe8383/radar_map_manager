@@ -10,7 +10,7 @@
 
 It is not just a floor plan card, but a **spatial perception engine**. RMM maps data from multiple scattered millimeter-wave radars in your home onto one or more floor plans, enabling whole-house human tracking, trajectory visualization, and precise coordinate-based automation.
 
-> 🚀 **V1.0.0 Officially Released!**
+> 🚀 **V1.0.0 Officially Released!** Supports multiple floor plans, ceiling and side mounting modes, three zone management types (`Monitor`, `Detect Trigger`, and `Detect Exclude`), multi-radar target fusion, and a much smoother editor experience.
 
 ---
 
