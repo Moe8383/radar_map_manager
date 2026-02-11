@@ -4,7 +4,7 @@
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 
-> 🇺🇸 [English Documentation](README.md) | 🇨🇳 ** 中文文档 **
+> 🇺🇸 [English Documentation](README.md) | 🇨🇳 中文文档
 
 **Radar Map Manager (RMM)** 是专为 Home Assistant 打造的毫米波雷达可视化与数据融合集成。
 
