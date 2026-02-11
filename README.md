@@ -9,7 +9,7 @@
 
 **Radar Map Manager (RMM)** is an advanced millimeter-wave radar visualization and sensor fusion integration designed for Home Assistant.
 
-It is not just a map card, but a powerful **spatial perception engine**. RMM maps data from multiple scattered radars (e.g., LD2410, LD2450, LD2460, LD6004) onto your floor plan, enabling tracking, trajectory visualization, and precise coordinate-based automation.
+It is not just a map card, but a powerful **spatial perception engine**. RMM maps data from multiple scattered radars (e.g., LD2410, LD2450, LD2460) onto your floor plan, enabling tracking, trajectory visualization, and precise coordinate-based automation.
 
 > 🚀 **V1.0.0 Released!** Now supports **Ceiling Mount**, **Exclude Zones**, and a smoother editor experience.
 
@@ -88,6 +88,34 @@ target_colors:                  # Custom colors for targets
   - "#00FF00"
   - "#00FFFF"
   - "#FF00FF"
+```
+
+### Step 3: Start Editing
+Click the ⚙️ (Gear) icon on the card to enter Edit Mode.
+
+Add Radar: Click Layout -> + and select your radar entity.
+
+Adjust: Drag the radar, adjust Rotation and Scale to match your floor plan.
+
+Draw Zones: Switch to Zones mode to draw polygons for automation triggers.
+
+🔜 Roadmap
+We are committed to creating the ultimate radar experience. Future plans include:
+
+Auto-Calibration: "One-click map alignment" using IMU (requires upcoming RMM Pro hardware).
+
+High-Frequency Mode: Unlock 20Hz+ silky-smooth tracking with custom firmware.
+
+Edge Computing: Offload zone processing to hardware for zero-latency automation.
+
+❤️ Support
+If you find this project helpful, please give it a ⭐️ Star!
+
+Bugs: Please open an Issue.
+
+Discussions: Share your setup in the Discussions tab.
+
+License: MIT
 
 
 ### ☕ 支持我的项目
