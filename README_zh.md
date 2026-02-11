@@ -49,9 +49,9 @@ RMM 兼容所有能够接入 Home Assistant 的毫米波雷达，包括1D 2D 3D�
     * ESPHome
     * MQTT
     * Zigbee (需支持坐标上报)
-* **坐标实体命名规范**：
+* **坐标实体命名规范** ‼️ 重要 ‼️ ：
     * 1D 雷达：sensor.[radar_name]_distance， 例如：sensor.rd_ld2410_distance
-    * 2D/3D 雷达：sensor.[radar_name]_target_?_x 、 sensor.[radar_name]_target_y 、 sensor.[radar_name]_target_z, 例如：sensor.rd_ld6004_target_1_x, sensor.rd_ld6004_target_1_y, sensor.rd_ld6004_target_1_z
+    * 2D/3D 雷达：sensor.[radar_name]_target_?_x , 例如：sensor.rd_ld6004_target_1_x, sensor.rd_ld6004_target_1_y, sensor.rd_ld6004_target_1_z
     * 雷达目标数[可选]：sensor.[radar_name]_presence_target_count， 例如：sensor.rd_ld2450_presence_target_count
 
 ---
