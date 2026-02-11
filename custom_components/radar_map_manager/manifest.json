@@ -4,9 +4,9 @@
   "codeowners": [],
   "config_flow": false,
   "dependencies": [],
-  "documentation": "https://github.com/your_username/radar_map_manager",
+  "documentation": "https://github.com/Moe8383/radar_map_manager_repo",
   "iot_class": "local_polling",
-  "issue_tracker": "https://github.com/your_username/radar_map_manager/issues",
+  "issue_tracker": "https://github.com/Moe8383/radar_map_manager_repo/issues",
   "requirements": [],
   "version": "1.0.0"
 }
