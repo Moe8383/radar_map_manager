@@ -131,6 +131,8 @@ elements:
 
 Click the ⚙️ icon in the top right corner of the card to enter Edit Mode.
 
+![RMM](gif/open_rmm.gif)
+
 ### A. 📡 Radar Layout (Layout)
 
 Click `Layout` in the panel to enter radar layout mode. Targets displayed here are raw radar coordinates.
@@ -145,13 +147,16 @@ Click `Layout` in the panel to enter radar layout mode. Targets displayed here a
 
 #### 2. Radar Settings
 
-![LAYOUT](images/layout_2.png)
+![LAYOUT](gif/layout_editor.gif)
 
 * Positioning: Drag the radar to its actual physical location on the map. Drag the radar handle to adjust the angle. Position and rotation can be fine-tuned using the `X`/`Y`/`Rot` inputs in the panel.
 
 * Scale Adjustment: Stand within the radar's detection range (preferably away from the center line and try multiple positions). Use a combination of these methods to match radar targets with the floor plan:
   
   * 1（Recommended). Click the `Freeze` button. This locks the first target detected by the radar. Manually drag this target to your actual standing position on the floor plan, and the system will automatically calculate the scale.
+
+![LAYOUT](gif/layout_freeze.gif)
+
   * 2. Adjust `ScX` and `ScY` sliders to change the `X`/`Y` coordinate scaling.
   * 3. Click `Ax` / `Ay` to automatically adjust based on the background image aspect ratio (reference only).
   
@@ -166,8 +171,7 @@ Click `Layout` in the panel to enter radar layout mode. Targets displayed here a
 
 #### 3. Radar Monitor Zones
 
-![LAYOUT](images/layout_monitor.png)
-![LAYOUT](images/layout_monitor_exam_1.png)
+![LAYOUT](gif/layout_monitor.gif)
 
 * Select a radar via the panel or the map, then click the `Monitor` button to edit its monitor zones.
 
@@ -179,12 +183,11 @@ Click `Layout` in the panel to enter radar layout mode. Targets displayed here a
 
 * Click `DONE` to exit Monitor zone editing.
 
-
 ### B. 🛡️ Zone Management (Zones)
 
 Click `Zones` in the panel to enter global zone management. Note: Zones here are global and relate only to fused targets, not specific radars. Targets displayed here are fused coordinates (default gold color).
 
-![ZONE](images/zones_1.png)
+![ZONE](gif/zones_select.gif)
 
 #### 1. Detect Trigger Zones
 
@@ -194,7 +197,9 @@ Click `Zones` in the panel to enter global zone management. Note: Zones here are
 
 * Delay: Supports setting a target entry delay. Enter the delay time (in seconds) in the `Dly` box to prevent false alarms caused by transient anomalies.
 
-* Automation: Once set, this automatically creates "Presence" and "Count" entities for automation.
+* Automation: Once set, this automatically creates "Occupancy" and "Count" entities for automation.
+
+![ZONE](gif/zones_select.gif)
 
 
 #### 2. Detect Exclude Zones
@@ -222,6 +227,8 @@ Click `Set` in the panel for global parameters.
 * `Backup`: Backup current configuration and export to a file.
 
 * `Restore`: Import a file to restore configuration.
+
+![SET](gif/set_color.gif)
 
 
 ## ❤️ Support the Project
