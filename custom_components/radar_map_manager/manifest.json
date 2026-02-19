@@ -7,6 +7,6 @@
   "codeowners": ["@Moe8383"],
   "iot_class": "local_polling",
   "config_flow": false,
-  "dependencies": [],
+  "dependencies": ["http"],
   "requirements": []
 }
