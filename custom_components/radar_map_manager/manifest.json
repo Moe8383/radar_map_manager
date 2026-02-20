@@ -1,7 +1,7 @@
 {
   "domain": "radar_map_manager",
   "name": "Radar Map Manager",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "documentation": "https://github.com/Moe8383/radar_map_manager",
   "issue_tracker": "https://github.com/Moe8383/radar_map_manager/issues",
   "codeowners": ["@Moe8383"],
