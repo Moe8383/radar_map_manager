@@ -125,7 +125,7 @@ export class RadarUI {
             .content { display: flex; flex-direction: column; gap: 3px; }
             .hidden { display: none !important; }
             .row { display: flex; align-items: center; gap: 3px; margin-bottom: 2px; }
-            .row label { color: #aaa; width: 35px; text-align: right; margin-right: 1px; font-size: 9px; flex-shrink: 0; }
+            .row label { color: #aaa; width: auto; text-align: right; margin-right: 1px; font-size: 9px; flex-shrink: 0; }
             .chk-label { display: flex; align-items: center; padding: 2px 4px; border: 1px solid #333; border-radius: 3px; background: #222; cursor: pointer; white-space: nowrap; }
             .chk-label:hover { background: #333; }
             .chk-label input { margin: 0 3px 0 0; }
@@ -215,7 +215,7 @@ export class RadarUI {
                                 </div>
                             </div>
                             <div class="row" style="justify-content: space-between;">
-                                <div style="display:flex; gap:2px;">
+                                <div style="display:flex; gap:8px;">
                                     <label class="chk-label"><input type="checkbox" id="layout-ceiling"><span>Ceiling</span></label>
                                     <label class="chk-label"><input type="checkbox" id="layout-mirror"><span>Mirror</span></label>
                                     <label class="chk-label"><input type="checkbox" id="layout-3d"><span>3D</span></label>
