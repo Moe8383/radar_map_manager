@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Radar Map Manager (雷达地图管理器)",
+        "description": "是否要设置并启用 Radar Map Manager 核心引擎？"
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Radar Map Manager 已经配置过了，只需存在一个全局实例即可运行。"
+    }
+  }
+}
