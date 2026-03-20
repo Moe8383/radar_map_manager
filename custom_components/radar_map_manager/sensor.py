@@ -166,3 +166,10 @@ class RadarZoneCountSensor(CoordinatorEntity, SensorEntity):
                 j = i
             except: return False
         return inside
+
+async def async_setup_entry(hass, config_entry, async_add_entities):
+    if DOMAIN not in hass.data or "coordinator" not in hass.data[DOMAIN]: return
+    coordinator = hass.data[DOMAIN]["coordinator"]
+    manager = RadarZoneCountManager(hass, coordinator, async_add_entities)
+    await manager.update_sensors()
+    coordinator.async_add_listener(manager.update_sensors_callback)
