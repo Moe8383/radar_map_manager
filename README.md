@@ -43,7 +43,7 @@ For side-mounted radars, RMM features a built-in 3D geometric correction algorit
 
 ## 🛠️ Supported Hardware
 
-RMM is compatible with any millimeter-wave radar integrated into Home Assistant (including 1D, 2D, and 3D radars), as long as they provide `DISTANCE` or `X/Y` coordinate data, such as 'HLK-LD2450' 'LD2460' 'LD6001' 'LD6002b' 'LD6004'
+RMM is compatible with any millimeter-wave radar integrated into Home Assistant (including 1D, 2D, and 3D radars), as long as they provide `DISTANCE` or `X/Y` coordinate data, such as `HLK-LD2450` `LD2460` `LD6001` `LD6002b` `LD6004`
 
 * **Connection Methods**:
     * ESPHome
