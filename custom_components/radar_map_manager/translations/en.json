@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Radar Map Manager",
+        "description": "Do you want to set up Radar Map Manager? This will enable the core integration and map engine."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Radar Map Manager is already configured. Only a single instance is needed."
+    }
+  }
+}
