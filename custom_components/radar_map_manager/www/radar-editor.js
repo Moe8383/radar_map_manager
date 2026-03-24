@@ -176,15 +176,15 @@ export class RadarEditor {
         bindClick('btn-cancel-layout', callbacks.onCancelLayout);
 
         bindClick('btn-add-radar', () => {
-            const name = prompt("Enter new radar name:");
+            const name = prompt("Enter new radar name:\n请输入新的雷达名称：");
             if(name && name.trim()) {
                 const newName = name.trim();
                 const lowerName = newName.toLowerCase();
                 const has2D = state.hass.states[`sensor.${lowerName}_target_1_x`];
                 const has1D = state.hass.states[`sensor.${lowerName}_distance`];
-                if (!has2D && !has1D) { alert(`Radar Entity Not Found!\n\nSystem looked for:\n- sensor.${lowerName}_target_1_x\n- sensor.${lowerName}_distance`); return; }
+                if (!has2D && !has1D) { alert(`Radar Entity Not Found!\n未找到雷达实体！\n\nSystem looked for:\n系统查找了：\n- sensor.${lowerName}_target_1_x\n- sensor.${lowerName}_distance`); return; }
                 
-                if (state.data && state.data[newName]) { alert(`Radar "${newName}" already exists!`); return; }
+                if (state.data && state.data[newName]) { alert(`Radar "${newName}" already exists!\n雷达 "${newName}" 已存在！`); return; }
                 state.hass.callService('radar_map_manager', 'add_radar', { radar_name: newName, map_group: state.mapGroup || "default" });
                 setTimeout(() => {
                     if (!state.data[newName]) state.data[newName] = { layout: {}, monitor_zones: [] }; 
@@ -195,8 +195,8 @@ export class RadarEditor {
             }
         });
         bindClick('btn-del-radar', () => {
-            if(!state.radar || state.radar === 'rd_default') return alert("Select valid radar");
-            if(confirm(`Delete ${state.radar}?`)) {
+            if(!state.radar || state.radar === 'rd_default') return alert("Select valid radar\n请选择有效的雷达");
+            if(confirm(`Delete ${state.radar}?\n确认删除 ${state.radar} 吗？`)) {
                 const rToDelete = state.radar;
                 state.hass.callService('radar_map_manager', 'remove_radar', { radar_name: rToDelete });
                 setTimeout(() => { 
@@ -275,7 +275,7 @@ export class RadarEditor {
         });
 
         bindClick('btn-del-zone', () => {
-            if (confirm("Are you sure you want to delete this zone?")) {
+            if (confirm("Are you sure you want to delete this zone?\n您确定要删除此区域吗？")) {
                 if(callbacks.onDelZone) callbacks.onDelZone();
                 exitAddMode();
             }
@@ -336,11 +336,11 @@ export class RadarEditor {
                 reader.onload = (ev) => {
                     try {
                         const json = JSON.parse(ev.target.result);
-                        if (confirm("Import config?")) {
+                        if (confirm("Import config?\n确认导入配置吗？")) {
                             state.hass.callService('radar_map_manager', 'import_config', { config_json: JSON.stringify(json) });
-                            setTimeout(() => { alert("Imported!"); location.reload(); }, 1000);
+                            setTimeout(() => { alert("Imported!\n导入成功！"); location.reload(); }, 1000);
                         }
-                    } catch (err) { alert("Invalid JSON"); }
+                    } catch (err) { alert("Invalid JSON\n无效的 JSON 文件"); }
                 };
                 reader.readAsText(file);
                 fileInput.value = '';
@@ -427,7 +427,7 @@ export class RadarEditor {
         }
 
         if (isDirty) {
-            if (confirm("Unsaved changes detected! Save now?")) {
+            if (confirm("Unsaved changes detected! Save now?\n检测到未保存的更改！现在保存吗？")) {
                 if (saveAction === 'layout' && callbacks.onSaveLayout) callbacks.onSaveLayout();
                 else if(callbacks.onSave) callbacks.onSave(); 
                 setTimeout(onProceed, 200); 
