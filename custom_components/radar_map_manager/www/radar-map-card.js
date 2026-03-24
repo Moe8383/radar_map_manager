@@ -208,7 +208,7 @@ class RadarMapCardNative extends HTMLElement {
                 });
 
                 if (isDuplicate) {
-                    alert(`Name conflict! "${n}" will result in a duplicate Entity ID. Please use a unique name.`);
+                    alert(`Name conflict! "${n}" will result in a duplicate Entity ID. Please use a unique name.\n名称冲突！"${n}" 将导致实体 ID 重复。请使用唯一的名称。`);
                     return; 
                 }
                 
@@ -220,7 +220,7 @@ class RadarMapCardNative extends HTMLElement {
                     list[that.state.selectedIndex].name = n;
                     list[that.state.selectedIndex].delay = d;
                 } else {
-                    alert("Please draw 3+ points or select a zone.");
+                    alert("Please draw 3+ points or select a zone.\n请绘制至少3个点或选择一个区域。");
                     return;
                 }
                 
@@ -254,8 +254,8 @@ class RadarMapCardNative extends HTMLElement {
                 that.renderer.draw(that.state, that.config, that._hass); 
             },
             onToggleFOV: () => { that.state.fov_edit_mode = !that.state.fov_edit_mode; that.ui.updateStatus(that.state, that.config); },
-            onDiscard: () => { if(confirm("Discard changes?")) that.fetchData(true); },
-            onClear: () => { if(confirm("Clear ALL?")) { that._getTargetList(that.state).length = 0; that.saveToBackend(); } },
+            onDiscard: () => { if(confirm("Discard changes?\n放弃更改吗？")) that.fetchData(true); },
+            onClear: () => { if(confirm("Clear ALL?\n清除所有内容吗？")) { that._getTargetList(that.state).length = 0; that.saveToBackend(); } },
             
             onSaveLayout: async () => {
                 if(!that.state.radar) return;
@@ -273,7 +273,7 @@ class RadarMapCardNative extends HTMLElement {
                 if (that.state.calibration.active) {
                     that.state.calibration = { active: false, raw: null, map: null };
                 } else {
-                    if (!that.state.radar) return alert("Please select a radar first.");
+                    if (!that.state.radar) return alert("Please select a radar first.\n请先选择一个雷达。");
                     
                     const rName = that.state.radar.toLowerCase();
                     const xEnt = that._hass.states[`sensor.${rName}_target_1_x`];
@@ -297,7 +297,7 @@ class RadarMapCardNative extends HTMLElement {
                             if (unit === 'm') ry *= 1000;
                             else if (unit === 'cm') ry *= 10;
                         } else {
-                            return alert("No active Target 1 found on this radar. Cannot freeze.");
+                            return alert("No active Target 1 found on this radar. Cannot freeze.\n未在该雷达上找到活动的目标1。无法冻结。");
                         }
                     }
                     
