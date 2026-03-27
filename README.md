@@ -60,6 +60,9 @@ RMM is compatible with any millimeter-wave radar integrated into Home Assistant 
      * *Example: `sensor.rd_ld6004_target_1_x`*
    * **Radar Target Count [Optional]**: `sensor.[radar_name]_presence_target_count`
      * *Example: `sensor.rd_ld2450_presence_target_count`*
+   * **Target Coordinate Units**:
+     * *Supported units include: `m`, `cm`, `mm`*
+     * *It is strongly recommended to set a unit. If no unit is set, `m` will be used by default.*
 
 ---
 
