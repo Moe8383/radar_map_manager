@@ -106,9 +106,11 @@ class FusionEngine:
                 try:
                     x = float(state_x.state)
                     y = float(state_y.state)
-                    unit = state_y.attributes.get('unit_of_measurement', 'm')
-                    if unit == 'm': x *= 1000; y *= 1000
-                    elif unit == 'cm': x *= 10; y *= 10
+                    unit_attr = state_y.attributes.get('unit_of_measurement')
+                    unit = str(unit_attr).lower() if unit_attr else 'm'
+                    if unit == 'cm': x *= 10; y *= 10
+                    elif unit == 'mm': pass
+                    else: x *= 1000; y *= 1000
                     return {'x': x, 'y': y, 'z': 0, 'is_1d': False}
                 except ValueError: pass
 
@@ -120,9 +122,10 @@ class FusionEngine:
                     dist = float(state_dist.state)
                     if dist < 0.1: return None
                     
-                    unit = state_dist.attributes.get('unit_of_measurement', 'm')
-                    if unit == 'm': dist_mm = dist * 1000
-                    elif unit == 'cm': dist_mm = dist * 10
+                    unit_attr = state_dist.attributes.get('unit_of_measurement')
+                    unit = str(unit_attr).lower() if unit_attr else 'm'
+                    if unit == 'cm': dist_mm = dist * 10
+                    elif unit == 'mm': dist_mm = dist
                     else: dist_mm = dist * 1000
                     
                     return {'x': 0, 'y': dist_mm, 'z': 0, 'is_1d': True} 
