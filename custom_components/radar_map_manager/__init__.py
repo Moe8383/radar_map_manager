@@ -96,7 +96,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         await hass.http.async_register_static_paths([
             StaticPathConfig("/radar_map_manager", www_dir, cache_headers=False)
         ])
-        add_extra_js_url(hass, "/radar_map_manager/radar-map-card.js?v=1.0.0")
+        js_path = os.path.join(www_dir, "radar-map-card.js")
+        version = os.path.getmtime(js_path) if os.path.exists(js_path) else time.time()
+        add_extra_js_url(hass, f"/radar_map_manager/radar-map-card.js?v={version}")
     coordinator = RadarCoordinator(hass)
     await coordinator.async_load()
     processor = RadarProcessor(hass, coordinator)

@@ -1,4 +1,3 @@
-"""Fusion Engine for Radar Map Manager (V1.0.0 Release)."""
 import logging
 import math
 _LOGGER = logging.getLogger(__name__)
