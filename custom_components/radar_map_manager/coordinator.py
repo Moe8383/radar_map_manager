@@ -1,4 +1,3 @@
-"""Data coordinator for Radar Map Manager (V1.0.0 Release)."""
 import logging
 from homeassistant.helpers.storage import Store
 from .const import DOMAIN
