@@ -4,6 +4,7 @@ const EDITOR_I18N = {
     "not_supported": { "zh": "⚠️ 兼容性提示：该功能仅支持RMM专用雷达\n\n💡 您可以通过MONITOR或者EXCLUDE区域设置进行软件区域过滤。", "en": "⚠️ Compatibility Note: This feature only supports RMM exclusive radars.\n💡 You can use MONITOR or EXCLUDE for software filtering." },
     "hw_unsupported": { "zh": "⚠️ 硬件限制：当前雷达 ({0}) 不支持硬件级屏蔽功能！", "en": "⚠️ Hardware Limit: Current radar ({0}) does not support hardware-level blind zones!" },
     "modal_title": { "zh": "📡 添加雷达", "en": "📡 Add Radar" },
+    "modal_edit_title": { "zh": "📡 修改雷达参数", "en": "📡 Edit Radar Params" },
     "modal_discovered": { "zh": "✨ 局域网内已发现的设备 (点击快捷选择):", "en": "✨ Discovered devices in LAN (click to select):" },
     "modal_not_found": { "zh": "🔍 未自动嗅探到新雷达实体，请手动输入名称。", "en": "🔍 No new radar entity automatically sniffed, please enter name manually." },
     "modal_lbl_name": { "zh": "雷达设备名称 (小写英文/数字/下划线):", "en": "Radar Name (lowercase/numbers/underscores):" },
@@ -202,11 +203,23 @@ export class RadarEditor {
         bindClick('btn-save-layout', callbacks.onSaveLayout); 
         bindClick('btn-freeze', callbacks.onCalibrationToggle); 
         bindClick('btn-cancel-layout', callbacks.onCancelLayout);
-        bindClick('btn-add-radar', () => {
+        const showRadarModal = (isEdit) => {
             if (document.getElementById('rmm-add-modal-overlay')) return;
+            let defaultName = "";
+            let defaultPin = "";
+            let defaultIp = "";
+            let titleKey = "modal_title";
+            if (isEdit) {
+                if (!state.radar || state.radar === 'rd_default') return alert(this.t("sel_radar"));
+                defaultName = state.radar;
+                const rConf = state.data[state.radar] || {};
+                defaultPin = rConf.device_pin || "";
+                defaultIp = rConf.radar_ip || "";
+                titleKey = "modal_edit_title";
+            }
             const existingRadars = Object.keys(state.data || {}).filter(k => !['global_zones', 'global_config', 'fused_targets'].includes(k));
             const discovered = [];
-            if (state.hass && state.hass.states) {
+            if (!isEdit && state.hass && state.hass.states) {
                 Object.keys(state.hass.states).forEach(entity_id => {
                     if (entity_id.startsWith('sensor.') && entity_id.endsWith('_presence_target_count')) {
                         let foundName = entity_id.split('.')[1].replace('_presence_target_count', '');
@@ -221,8 +234,9 @@ export class RadarEditor {
             modalOverlay.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:9999; display:flex; justify-content:center; align-items:center; font-family:-apple-system, BlinkMacSystemFont, sans-serif;";
             const modalBox = document.createElement('div');
             modalBox.style.cssText = "background:var(--card-background-color, #fff); color:var(--primary-text-color, #333); width:360px; max-width:90%; padding:24px; border-radius:12px; box-shadow:0 8px 30px rgba(0,0,0,0.3);";
-            let html = `<h3 style="margin:top:0; margin-bottom:20px; font-size:18px; color:var(--primary-text-color, #333);">${this.t('modal_title')}</h3>`;
-            if (discovered.length > 0) {
+            let html = `<h3 style="margin-top:0; margin-bottom:20px; font-size:18px; color:var(--primary-text-color, #333);">${this.t(titleKey)}</h3>`;
+            if (!isEdit) {
+                if (discovered.length > 0) {
                 html += `<div style="font-size:13px; font-weight:bold; color:var(--secondary-text-color, #666); margin-bottom:10px;">${this.t('modal_discovered')}</div>`;
                 html += `<div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:20px;">`;
                 discovered.forEach(name => {
@@ -232,13 +246,14 @@ export class RadarEditor {
             } else {
                 html += `<div style="font-size:13px; color:var(--secondary-text-color, #888); margin-bottom:20px; font-style:italic; padding:10px; background:var(--secondary-background-color, #f5f5f5); border-radius:6px;">${this.t('modal_not_found')}</div>`;
             }
+            }
             html += `
                 <label style="display:block; font-size:13px; font-weight:bold; margin-bottom:5px;">${this.t('modal_lbl_name')}</label>
-                <input type="text" id="rmm-input-name" placeholder="例如: living_room" style="width:100%; box-sizing:border-box; padding:10px; border:1px solid var(--divider-color, #ccc); border-radius:6px; margin-bottom:15px; background:var(--secondary-background-color, #fafafa); color:var(--primary-text-color, #333); font-size:14px; outline:none;">
+                <input type="text" id="rmm-input-name" value="${defaultName}" ${isEdit ? 'disabled' : ''} placeholder="例如: living_room" style="width:100%; box-sizing:border-box; padding:10px; border:1px solid var(--divider-color, #ccc); border-radius:6px; margin-bottom:15px; background:var(--secondary-background-color, #fafafa); color:var(--primary-text-color, #333); font-size:14px; outline:none; ${isEdit ? 'opacity:0.6; cursor:not-allowed;' : ''}">
                 <label style="display:block; font-size:13px; font-weight:bold; margin-bottom:5px;">${this.t('modal_lbl_pin')}</label>
-                <input type="text" id="rmm-input-pin" placeholder="输入控制台上的红底验证码" style="width:100%; box-sizing:border-box; padding:10px; border:1px solid var(--divider-color, #ccc); border-radius:6px; margin-bottom:25px; text-transform:uppercase; font-weight:bold; letter-spacing:1px; background:var(--secondary-background-color, #fafafa); color:var(--primary-text-color, #333); font-size:14px; outline:none;">
+                <input type="text" id="rmm-input-pin" value="${defaultPin}" placeholder="输入控制台上的红底验证码" style="width:100%; box-sizing:border-box; padding:10px; border:1px solid var(--divider-color, #ccc); border-radius:6px; margin-bottom:25px; text-transform:uppercase; font-weight:bold; letter-spacing:1px; background:var(--secondary-background-color, #fafafa); color:var(--primary-text-color, #333); font-size:14px; outline:none;">
                 <label style="display:block; font-size:13px; font-weight:bold; margin-bottom:5px;">${this.t('modal_lbl_ip')}</label>
-                <input type="text" id="rmm-input-ip" placeholder="例如: 192.168.1.100" style="width:100%; box-sizing:border-box; padding:10px; border:1px solid var(--divider-color, #ccc); border-radius:6px; margin-bottom:25px; background:var(--secondary-background-color, #fafafa); color:var(--primary-text-color, #333); font-size:14px; outline:none;">
+                <input type="text" id="rmm-input-ip" value="${defaultIp}" placeholder="例如: 192.168.1.100" style="width:100%; box-sizing:border-box; padding:10px; border:1px solid var(--divider-color, #ccc); border-radius:6px; margin-bottom:25px; background:var(--secondary-background-color, #fafafa); color:var(--primary-text-color, #333); font-size:14px; outline:none;">
                 <div style="display:flex; justify-content:flex-end; gap:12px;">
                     <button type="button" id="rmm-btn-cancel" style="padding:10px 18px; border:none; background:var(--disabled-text-color, #ccc); color:#fff; border-radius:6px; cursor:pointer; font-size:14px; font-weight:bold; transition:0.2s;">${this.t('modal_btn_cancel')}</button>
                     <button type="button" id="rmm-btn-confirm" style="padding:10px 18px; border:none; background:var(--primary-color, #03a9f4); color:#fff; border-radius:6px; cursor:pointer; font-size:14px; font-weight:bold; transition:0.2s;">${this.t('modal_btn_confirm')}</button>
@@ -256,19 +271,21 @@ export class RadarEditor {
             document.addEventListener('keydown', escListener);
             const inputName = modalBox.querySelector('#rmm-input-name');
             const inputPin = modalBox.querySelector('#rmm-input-pin');
-            const discBtns = modalBox.querySelectorAll('.btn-discovered');
-            discBtns.forEach(btn => {
-                btn.onclick = () => {
-                    discBtns.forEach(b => { 
-                        b.style.background = 'transparent'; 
-                        b.style.color = 'var(--primary-color, #03a9f4)'; 
-                    });
-                    btn.style.background = 'var(--primary-color, #03a9f4)';
-                    btn.style.color = '#fff';
-                    inputName.value = btn.innerText;
-                    inputPin.focus();
-                };
-            });
+            if (!isEdit) {
+                const discBtns = modalBox.querySelectorAll('.btn-discovered');
+                discBtns.forEach(btn => {
+                    btn.onclick = () => {
+                        discBtns.forEach(b => { 
+                            b.style.background = 'transparent'; 
+                            b.style.color = 'var(--primary-color, #03a9f4)'; 
+                        });
+                        btn.style.background = 'var(--primary-color, #03a9f4)';
+                        btn.style.color = '#fff';
+                        inputName.value = btn.innerText;
+                        inputPin.focus();
+                    };
+                });
+            }
             modalBox.querySelector('#rmm-btn-cancel').onclick = () => {
                 modalOverlay.remove();
                 document.removeEventListener('keydown', escListener);
@@ -314,15 +331,33 @@ export class RadarEditor {
                 setTimeout(() => {
                     if (!state.data[lowerName]) {
                         state.data[lowerName] = { layout: {}, monitor_zones: [], hardware_zones: [] }; 
-                    } 
+                } else if (isEdit) {
+                    state.data[lowerName].device_pin = finalPin;
+                    state.data[lowerName].radar_ip = rawIp;
+                }
                     this.ui.updateRadarList(state, config); 
                     const sel = this.root.getElementById('sel-radar'); 
                     if(sel) { 
                         sel.value = lowerName; 
                         if(callbacks.onRadarChange) callbacks.onRadarChange(lowerName, sel); 
                     }
+                if (isEdit) {
+                    console.log("RMM: Parameters updated. If WebSocket tunnel doesn't auto-reconnect, please refresh the page.");
+                }
                 }, 500);
             };
+    };
+    bindClick('btn-add-radar', () => showRadarModal(false));
+        bindClick('btn-edit-radar', () => {
+            if (!state.radar || state.radar === 'rd_default') {
+                return alert(this.t("sel_radar"));
+            }
+            const radarData = state.data[state.radar] || {};
+            if (!radarData.capabilities) {
+                alert(this.t("not_supported"));
+                return; 
+            }
+            showRadarModal(true);
         });
         bindClick('btn-del-radar', () => {
             if(!state.radar || state.radar === 'rd_default') return alert(this.t("sel_radar"));

@@ -313,7 +313,13 @@ class RadarMapCardNative extends HTMLElement {
                 that.resetSelection(); 
                 setTimeout(() => {
                     that.ui.updateStatus(that.state, that.config);
-                    if(mode === 'layout') that.ui.updateRadarList(that.state, that.config);
+                    if(mode === 'layout') {
+                        that.ui.updateRadarList(that.state, that.config);
+                        setTimeout(() => {
+                            that.ui.updateLayoutInputs(that.state, that._hass);
+                            that.renderer.draw(that.state, that.config, that._hass);
+                        }, 20); 
+                    }
                 }, 50);
             },
             onToggleEditMode: () => {

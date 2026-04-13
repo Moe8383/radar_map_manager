@@ -164,9 +164,10 @@ export class RadarUI {
                     <div id="layout-tools" class="content">
 						<div id="layout-header-row" class="row">
                             <select id="sel-radar" style="flex:1; width:auto; min-width:0;"></select>
-                            <button id="btn-add-radar" class="success" title="Add Radar" style="width:24px;">+</button>
-                            <button id="btn-del-radar" class="danger" title="Del Radar" style="width:24px;">-</button>
-                            <select id="sel-radar-zone-type" style="flex:0 0 32%; margin-left:2px; height:22px; background:#222; color:white; border:1px solid #444;">
+                            <button id="btn-add-radar" class="success" title="Add Radar" style="width:20px; padding:0;">+</button>
+                            <button id="btn-edit-radar" class="primary" title="Edit Radar Params" style="width:20px; padding:0; margin-left:2px;">✎</button>
+                            <button id="btn-del-radar" class="danger" title="Del Radar" style="width:20px; padding:0; margin-left:2px;">-</button>
+                            <select id="sel-radar-zone-type" style="flex:0 0 28%; margin-left:2px; height:22px; background:#222; color:white; border:1px solid #444;">
                                 <option value="monitor_zones">Monitor</option>
                                 <option value="hardware_zones">HW Zone</option>
                             </select>
@@ -241,7 +242,7 @@ export class RadarUI {
                     </div>
                     <div id="settings-tools" class="content hidden">
                         <div class="row" style="margin-top:5px">
-                            <label style="width:50px">Update</label>
+                            <label style="width:40px">Update</label>
                             <div class="slider-row">
                                 <button class="stepper" id="btn-int-minus">-</button>
                                 <input type="range" id="set-interval-range" min="0.1" max="2.0" step="0.1" class="slider">
@@ -250,7 +251,16 @@ export class RadarUI {
                             <span id="val-interval" style="width:30px; text-align:right">0.1s</span>
                         </div>
                         <div class="row">
-                            <label style="width:50px">Merge</label>
+                            <label style="width:40px" title="Higher is smoother">Smooth</label>
+                            <div class="slider-row">
+                                <button class="stepper" id="btn-ema-minus">-</button>
+                                <input type="range" id="set-ema-range" min="1" max="10" step="1" class="slider">
+                                <button class="stepper" id="btn-ema-plus">+</button>
+                            </div>
+                            <span id="val-ema" style="width:30px; text-align:right">7 Lvl</span>
+                        </div>
+                        <div class="row">
+                            <label style="width:40px">Merge</label>
                             <div class="slider-row">
                                 <button class="stepper" id="btn-mrg-minus">-</button>
                                 <input type="range" id="set-merge-range" min="0.1" max="2.0" step="0.1" class="slider">
@@ -258,28 +268,23 @@ export class RadarUI {
                             </div>
                             <span id="val-merge" style="width:30px; text-align:right">0.8m</span>
                         </div>
-                        <div class="row">
-                            <label style="width:50px">Tgt H</label>
-                            <div class="slider-row">
-                                <button class="stepper" id="btn-tgt-minus">-</button>
-                                <input type="range" id="set-target-range" min="0" max="3.0" step="0.1" class="slider">
-                                <button class="stepper" id="btn-tgt-plus">+</button>
+                        <div class="row" style="justify-content: space-between;">
+                            <div style="display:flex; align-items:center; gap:2px;">
+                                <label style="width:40px">Color</label>
+                                <div style="display:flex; align-items:center; background:#111; border:1px solid #333; border-radius:2px; padding:1px; height:18px; box-sizing:border-box;">
+                                    <input type="color" id="set-fused-color" style="width:14px; height:14px; cursor:pointer; padding:0; border:none; background:none;">
+                                    <span id="val-fused-color" style="font-size:9px; padding:0 3px; color:#ccc; text-transform:uppercase;">#FFD700</span>
+                                </div>
                             </div>
-                            <span id="val-target" style="width:30px; text-align:right">1.5m</span>
-                        </div>
-                        <div class="row">
-                            <label style="width:50px">Color</label>
-                            <input type="color" id="set-fused-color" style="flex:1; height:20px; cursor:pointer; padding:0; border:none;">
-                            <span id="val-fused-color" style="width:50px; text-align:right; font-size:9px;">#FFD700</span>
-                        </div>
-                        <div class="row">
-                            <label style="width:50px" title="Higher is smoother">Smooth</label>
-                            <div class="slider-row">
-                                <button class="stepper" id="btn-ema-minus">-</button>
-                                <input type="range" id="set-ema-range" min="1" max="10" step="1" class="slider">
-                                <button class="stepper" id="btn-ema-plus">+</button>
+                            <div style="display:flex; align-items:center; gap:2px;">
+                                <label style="width:25px; text-align:right;">Tgt H</label>
+                                <div class="slider-row" style="flex:none; width:auto;">
+                                    <button class="stepper" id="btn-tgt-minus">-</button>
+                                    <input type="number" id="set-target-input" min="0" max="3.0" step="0.1" style="width:28px; text-align:center; padding:0;">
+                                    <button class="stepper" id="btn-tgt-plus">+</button>
+                                </div>
+                                <span style="font-size:9px; color:#aaa; width:8px;">m</span>
                             </div>
-                            <span id="val-ema" style="width:30px; text-align:right">7 Lvl</span>
                         </div>
                         <div class="separator" style="margin: 1px 0;"></div>
                         <div class="actions">
@@ -327,6 +332,7 @@ export class RadarUI {
             const btnFov = this.root.getElementById('btn-edit-fov');
             const selRadar = this.root.getElementById('sel-radar');
             const btnAdd = this.root.getElementById('btn-add-radar');
+            const btnEdit = this.root.getElementById('btn-edit-radar');
             const btnDel = this.root.getElementById('btn-del-radar');
             if (state.fov_edit_mode) {
                 if(innerParams) innerParams.style.display = 'none'; 
@@ -340,6 +346,7 @@ export class RadarUI {
                 if(btnFov) { btnFov.innerText = "✔"; btnFov.className = "success"; }
                 if(selRadar) selRadar.disabled = true;
                 if(btnAdd) btnAdd.disabled = true;
+                if(btnEdit) btnEdit.disabled = true;
                 if(btnDel) btnDel.disabled = true;
                 const selRadarZoneType = this.root.getElementById('sel-radar-zone-type');
                 if(selRadarZoneType) selRadarZoneType.disabled = true; 
@@ -348,6 +355,7 @@ export class RadarUI {
                 if(btnFov) { btnFov.innerText = "✏️"; btnFov.className = "warning"; }
                 if(selRadar) selRadar.disabled = false;
                 if(btnAdd) btnAdd.disabled = false;
+                if(btnEdit) btnEdit.disabled = false;
                 if(btnDel) btnDel.disabled = false;
                 const selRadarZoneType = this.root.getElementById('sel-radar-zone-type');
                 if(selRadarZoneType) selRadarZoneType.disabled = false;
@@ -527,9 +535,9 @@ export class RadarUI {
             slider.onchange = (e) => updateAndSave(parseFloat(e.target.value));
         };
         bindControl('set-interval-range', 'val-interval', 'btn-int-minus', 'btn-int-plus', 'update_interval', 0.1, 's');
-        bindControl('set-merge-range', 'val-merge', 'btn-mrg-minus', 'btn-mrg-plus', 'merge_distance', 0.8, 'm');
-        bindControl('set-target-range', 'val-target', 'btn-tgt-minus', 'btn-tgt-plus', 'target_height', 1.5, 'm');
         bindControl('set-ema-range', 'val-ema', 'btn-ema-minus', 'btn-ema-plus', 'ema_smoothing_level', 7, ' Lvl');
+        bindControl('set-merge-range', 'val-merge', 'btn-mrg-minus', 'btn-mrg-plus', 'merge_distance', 0.8, 'm');
+        bindControl('set-target-input', null, 'btn-tgt-minus', 'btn-tgt-plus', 'target_height', 1.5, '');
         const colorInput = this.root.getElementById('set-fused-color');
         const colorLabel = this.root.getElementById('val-fused-color');
         if (colorInput) {
@@ -537,10 +545,10 @@ export class RadarUI {
             if (this.root.activeElement !== colorInput) {
                 colorInput.value = curColor;
             }
-            if (colorLabel) colorLabel.innerText = curColor;
+                if (colorLabel) colorLabel.innerText = curColor.toUpperCase();
             colorInput.onchange = (e) => {
                 const newColor = e.target.value;
-                if(colorLabel) colorLabel.innerText = newColor;
+                    if(colorLabel) colorLabel.innerText = newColor.toUpperCase();
                 if(state.hass) {
                     state.hass.callService('radar_map_manager', 'update_global_config', { fused_color: newColor });
                 }
@@ -640,6 +648,9 @@ export class RadarUI {
                 sel.add(opt);
             }
         });
-        if (!currentVal && sel.options.length > 0) sel.selectedIndex = 0;
+        if (!currentVal && sel.options.length > 0) {
+            sel.selectedIndex = 0;
+            state.radar = sel.value; 
+        }
     }
 }
