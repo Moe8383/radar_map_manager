@@ -220,12 +220,21 @@ export class RadarEditor {
             }
             const existingRadars = Object.keys(state.data || {}).filter(k => !['global_zones', 'global_config', 'fused_targets'].includes(k));
             const discovered = [];
+            if (!isEdit && this.host.fullRawData && this.host.fullRawData.discovered_radars) {
+                Object.entries(this.host.fullRawData.discovered_radars).forEach(([rName, caps]) => {
+                    if (!existingRadars.includes(rName)) {
+                        let model = caps.model || "Unknown";
+                        let mac = caps.mac ? ` - ${caps.mac}` : "";
+                        discovered.push({ name: rName, label: `${rName} <span style="font-size:11px;opacity:0.7;font-weight:normal;">(${model}${mac})</span>` });
+                    }
+                });
+            }
             if (!isEdit && state.hass && state.hass.states) {
                 Object.keys(state.hass.states).forEach(entity_id => {
                     if (entity_id.startsWith('sensor.') && entity_id.endsWith('_presence_target_count')) {
                         let foundName = entity_id.split('.')[1].replace('_presence_target_count', '');
-                        if (!existingRadars.includes(foundName)) {
-                            discovered.push(foundName);
+                        if (!existingRadars.includes(foundName) && !discovered.some(d => d.name === foundName)) {
+                            discovered.push({ name: foundName, label: foundName });
                         }
                     }
                 });
@@ -239,9 +248,9 @@ export class RadarEditor {
             if (!isEdit) {
                 if (discovered.length > 0) {
                 html += `<div style="font-size:13px; font-weight:bold; color:var(--secondary-text-color, #666); margin-bottom:10px;">${this.t('modal_discovered')}</div>`;
-                html += `<div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:20px;">`;
-                discovered.forEach(name => {
-                    html += `<button type="button" class="btn-discovered" style="padding:6px 12px; border:1px solid var(--primary-color, #03a9f4); background:transparent; color:var(--primary-color, #03a9f4); border-radius:16px; cursor:pointer; font-size:13px; font-weight:bold; transition:all 0.2s;">${name}</button>`;
+                html += `<div style="display:flex; flex-direction:column; gap:8px; margin-bottom:20px; max-height:160px; overflow-y:auto; padding-right:5px;">`;
+                discovered.forEach(d => {
+                    html += `<button type="button" class="btn-discovered" data-name="${d.name}" style="padding:8px 12px; text-align:left; border:1px solid var(--primary-color, #03a9f4); background:transparent; color:var(--primary-color, #03a9f4); border-radius:8px; cursor:pointer; font-size:14px; font-weight:bold; transition:all 0.2s;">${d.label}</button>`;
                 });
                 html += `</div>`;
             } else {
@@ -282,7 +291,7 @@ export class RadarEditor {
                         });
                         btn.style.background = 'var(--primary-color, #03a9f4)';
                         btn.style.color = '#fff';
-                        inputName.value = btn.innerText;
+                        inputName.value = btn.getAttribute('data-name');
                         inputPin.focus();
                     };
                 });

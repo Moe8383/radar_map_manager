@@ -98,6 +98,12 @@ class RadarMapCardNative extends HTMLElement {
         this.startHeartbeat();
     }
     set hass(h) {
+        if (this.state.rawHass && this.state.rawHass.connection && h && h.connection && this.state.rawHass.connection !== h.connection) {
+            console.log("[RMM] HA Connection changed (Wake up from sleep). Resubscribing...");
+            if (this._authUnsubscribe) { this._authUnsubscribe(); this._authUnsubscribe = null; }
+            if (this._streamUnsubscribe) { this._streamUnsubscribe(); this._streamUnsubscribe = null; }
+            this._authListenerAdded = false;
+        }
         this._hass = h;
         this.state.rawHass = h;
         this.state.hass = this.getMockHass(h); 
@@ -227,12 +233,17 @@ class RadarMapCardNative extends HTMLElement {
             this.wsConnections[rName].isConnecting = false;
             this.wsConnections[rName].unsubscribe = unsub;
         }).catch((err) => {
-            console.warn(this.t("proxy_fail", err.message));
+            if (err.code === 'eng_mode_off') {
+                console.log(`[RMM] Radar '${rName}' Engineering Mode is OFF. WS Tunnel sleeping for 60s.`);
+                this.wsConnections[rName].nextRetry = Date.now() + 60000;
+            } else {
+                console.warn(this.t("proxy_fail", err.message));
+                this.wsConnections[rName].nextRetry = Date.now() + 5000;
+            }
             this.wsConnections[rName].isConnecting = false;
             this.state.wsTargets[rName].connected = false;
             this.state.hass = this.getMockHass(this.state.rawHass);
             requestAnimationFrame(() => this.renderer.draw(this.state, this.config, this.state.hass));
-            this.wsConnections[rName].nextRetry = Date.now() + 5000;
         });
     }
     getMockHass(h) {

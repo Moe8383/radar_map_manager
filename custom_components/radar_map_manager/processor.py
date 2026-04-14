@@ -22,5 +22,7 @@ class RadarProcessor:
     def _update_frontend_sensor(self):
         if not self._coordinator.data:
             return
-        data_to_send = self._coordinator.data
+        data_to_send = dict(self._coordinator.data)
+        from .const import DOMAIN
+        data_to_send["discovered_radars"] = self.hass.data.get(DOMAIN, {}).get("capabilities_cache", {})
         async_dispatcher_send(self.hass, "rmm_stream_update", data_to_send)

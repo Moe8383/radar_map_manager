@@ -321,7 +321,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     hass.services.async_register(DOMAIN, "update_global_config", handle_update_global_config, schema=UPDATE_GLOBAL_CONFIG_SCHEMA)
     hass.services.async_register(DOMAIN, "import_config", handle_import_config)
     @callback
-    def async_on_radar_info(msg):
+    def on_radar_info(msg):
+        if not msg.payload:
+            return
         try:
             payload = json.loads(msg.payload)
             topic_parts = msg.topic.split('/')
@@ -329,8 +331,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                 r_name = topic_parts[1]
                 caps = payload.get("capabilities", {})
                 mac = payload.get("mac", "")
+                caps["mac"] = mac
+                caps["model"] = payload.get("model", "Unknown")
                 degraded_caps = caps.copy()
                 degraded_caps["max_hw_zones"] = 0
+                degraded_caps["mac"] = mac
+                degraded_caps["model"] = payload.get("model", "Unknown")
+                stale_keys = []
+                for k, v in hass.data[DOMAIN]["capabilities_cache"].items():
+                    if v.get("mac") == mac and k != r_name:
+                        stale_keys.append(k)
+                for k in stale_keys:
+                    hass.data[DOMAIN]["capabilities_cache"].pop(k, None)
+                    hass.async_create_task(mqtt.async_publish(hass, f"rmm_radar/{k}/info", "", retain=True))
                 hass.data[DOMAIN]["capabilities_cache"][r_name] = degraded_caps
                 pending = hass.data[DOMAIN]["pending_auth"].get(r_name)
                 if pending and (time.time() - pending.get("time", 0) < 5):
@@ -439,7 +452,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         except Exception as e:
             _LOGGER.error(f"RMM: Failed to parse yaw_delta: {e}")
     @callback
-    def async_on_radar_data(msg):
+    def on_radar_data(msg):
         try:
             payload = json.loads(msg.payload)
             topic_parts = msg.topic.split('/')
@@ -448,6 +461,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                 count = payload.get("count", 0)
                 targets = payload.get("targets", [])
                 hass.data[DOMAIN]["live_data"][r_name] = targets[:count]
+        except Exception:
+            pass
+    @callback
+    def on_radar_availability(msg):
+        try:
+            topic_parts = msg.topic.split('/')
+            if len(topic_parts) >= 3:
+                r_name = topic_parts[1]
+                if msg.payload == "offline":
+                    _LOGGER.info(f"RMM: 雷达 '{r_name}' 意外离线 (LWT触发)，正在清空地图残影...")
+                    if r_name in hass.data[DOMAIN].get("live_data", {}):
+                        hass.data[DOMAIN]["live_data"][r_name] = []
         except Exception:
             pass
     @callback
@@ -477,7 +502,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         try:
             ws = await session.ws_connect(url, timeout=5.0, ssl=False, heartbeat=15.0)
             auth_req = await ws.receive_json(timeout=3.0)
-            if auth_req.get("status") == "auth_required":
+            if auth_req.get("status") == "eng_mode_off":
+                _LOGGER.info(f"RMM: 雷达 '{radar_name}' 未开启工程模式，WS 隧道已关闭，系统平滑降级为 MQTT。")
+                await ws.close()
+                connection.send_error(msg["id"], "eng_mode_off", "Engineering mode is disabled")
+                return
+            elif auth_req.get("status") == "auth_required":
                 nonce = secrets.token_hex(16)
                 hmac_val = hashlib.sha256((nonce + pin).encode('utf-8')).hexdigest()
                 await ws.send_json({"cmd": "auth", "nonce": nonce, "hmac": hmac_val})
@@ -534,10 +564,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         await processor.update(force=True)
         await broadcast_hw_zones()
         try:
-            await mqtt.async_subscribe(hass, "rmm_radar/+/info", async_on_radar_info)
+            await mqtt.async_subscribe(hass, "rmm_radar/+/info", on_radar_info)
             await mqtt.async_subscribe(hass, "rmm_radar/+/auth/response", async_on_auth_response)
-            await mqtt.async_subscribe(hass, "rmm_radar/+/data", async_on_radar_data)
+            await mqtt.async_subscribe(hass, "rmm_radar/+/data", on_radar_data)
             await mqtt.async_subscribe(hass, "rmm_radar/+/yaw_delta/state", async_on_yaw_delta)
+            await mqtt.async_subscribe(hass, "rmm_radar/+/availability", on_radar_availability)
             _LOGGER.info("RMM: Successfully subscribed to info and auth topics")
         except Exception as e:
             _LOGGER.error(f"RMM: Failed to subscribe to info topic: {e}")
