@@ -172,6 +172,9 @@ class FusionEngine:
                 if used[j]: continue
                 p1 = points[i]
                 p2 = points[j]
+                already_has_radar = any(p['radar'] == p2['radar'] for p in cluster)
+                if already_has_radar:
+                    continue
                 dist = float('inf')
                 is_p1_1d = p1.get('is_1d', False)
                 is_p2_1d = p2.get('is_1d', False)
