@@ -72,6 +72,8 @@ UPDATE_GLOBAL_CONFIG_SCHEMA = vol.Schema({
     vol.Optional("target_height"): vol.Coerce(float),
     vol.Optional("fused_color"): cv.string,
     vol.Optional("ema_smoothing_level"): vol.Coerce(int),
+    vol.Optional("verify_delay"): vol.Coerce(float),
+    vol.Optional("hibernation_ttl"): vol.Coerce(float),
 })
 def get_t(hass, key, *args):
     lang = hass.config.language if hasattr(hass.config, 'language') else 'en'
