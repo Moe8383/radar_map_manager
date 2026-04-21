@@ -22,7 +22,7 @@ class FusionEngine:
             verify_delay = float(global_config.get("verify_delay", 2.5))
             hibernation_ttl_sec = float(global_config.get("hibernation_ttl", 12.0)) * 3600.0
             enable_verify_rule = bool(global_config.get("enable_verify_rule", True))
-            max_jump_base = float(global_config.get("max_jump_base", 1.5))
+            max_jump_base = float(global_config.get("max_jump_base", 1.0))
             max_jump_speed = float(global_config.get("max_jump_speed", 2.5))
             maps = data.get("maps", {})
             radars = data.get("radars", {})
@@ -161,7 +161,7 @@ class FusionEngine:
             return {'left': final_x, 'top': final_y, 'active': True}
         except Exception as e:
             return None
-    def _cluster_targets(self, map_id, points, merge_dist_m=0.8, ema_level=7, update_interval=0.1, entrance_zones=None, exclude_zones=None, verify_delay=2.5, hibernation_ttl_sec=43200, map_scale=5.0, enable_verify_rule=True, max_jump_base=1.5, max_jump_speed=2.5):
+    def _cluster_targets(self, map_id, points, merge_dist_m=0.8, ema_level=7, update_interval=0.1, entrance_zones=None, exclude_zones=None, verify_delay=2.5, hibernation_ttl_sec=43200, map_scale=5.0, enable_verify_rule=True, max_jump_base=1.0, max_jump_speed=2.5):
         import time
         current_time = time.time()
         old_targets = self._history.get(map_id, {})
