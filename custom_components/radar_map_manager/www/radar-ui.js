@@ -133,6 +133,12 @@ export class RadarUI {
             button.warning { background: #F57F17 !important; border-color: #E65100 !important; color: black !important; }
             button.danger { background: #C62828 !important; border-color: #B71C1c !important; color: white !important; }
             .point-editor { background: #1a1a1a; padding: 2px; border-radius: 2px; opacity: 0.5; pointer-events: none; border: 1px solid #333; }
+            .scroll-area { max-height: 110px; overflow-y: auto; overflow-x: hidden; padding-right: 2px; margin-right: -2px; }
+            .scroll-area > * { flex-shrink: 0; } 
+            .scroll-area::-webkit-scrollbar { width: 3px; }
+            .scroll-area::-webkit-scrollbar-track { background: transparent; }
+            .scroll-area::-webkit-scrollbar-thumb { background: #666; border-radius: 2px; }
+            .scroll-area::-webkit-scrollbar-thumb:hover { background: #888; }
             #btn-toggle-mode { position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 4px; color: rgba(255, 255, 255, 0.7); font-size: 14px; cursor: pointer; z-index: 5; display: flex; align-items: center; justify-content: center; pointer-events: auto; transition: all 0.2s; }
             #btn-toggle-mode:hover { background: rgba(33, 150, 243, 0.8); color: white; border-color: #2196F3; }
             #btn-toggle-mode.active { background: #b71c1c; color: white; border-color: #ff5252; }
@@ -241,7 +247,8 @@ export class RadarUI {
                         </div>
                     </div>
                     <div id="settings-tools" class="content hidden">
-                        <div class="row" style="margin-top:5px">
+                        <div class="scroll-area" style="display:flex; flex-direction:column; gap:3px; margin-top:5px;">
+                        <div class="row">
                             <label style="width:40px">Update</label>
                             <div class="slider-row">
                                 <button class="stepper" id="btn-int-minus">-</button>
@@ -268,25 +275,23 @@ export class RadarUI {
                             </div>
                             <span id="val-merge" style="width:30px; text-align:right">0.8m</span>
                         </div>
-                        <div class="row" style="justify-content: space-between;">
-                            <div style="display:flex; align-items:center; gap:1px;">
-                                <label style="width:22px; text-align:right;" title="Time to verify a target">Vfy</label>
-                                <div class="slider-row" style="flex:none; width:auto;">
-                                    <button class="stepper" id="btn-vfy-minus">-</button>
-                                    <input type="number" id="set-verify-input" min="0" max="5.0" step="0.5" style="width:24px; text-align:center; padding:0;">
-                                    <button class="stepper" id="btn-vfy-plus">+</button>
-                                </div>
-                                <span style="font-size:9px; color:#aaa; width:6px;">s</span>
+                        <div class="row">
+                            <label style="width:40px" title="Time to verify a target">Verify</label>
+                            <div class="slider-row">
+                                <button class="stepper" id="btn-vfy-minus">-</button>
+                                <input type="range" id="set-verify-range" min="0" max="5.0" step="0.5" class="slider">
+                                <button class="stepper" id="btn-vfy-plus">+</button>
                             </div>
-                            <div style="display:flex; align-items:center; gap:1px;">
-                                <label style="width:25px; text-align:right;" title="Hibernation TTL">Hbm</label>
-                                <div class="slider-row" style="flex:none; width:auto;">
-                                    <button class="stepper" id="btn-hbm-minus">-</button>
-                                    <input type="number" id="set-hbm-input" min="0" max="24" step="1" style="width:24px; text-align:center; padding:0;">
-                                    <button class="stepper" id="btn-hbm-plus">+</button>
-                                </div>
-                                <span style="font-size:9px; color:#aaa; width:6px;">h</span>
+                            <span id="val-verify" style="width:30px; text-align:right">2.5s</span>
+                        </div>
+                        <div class="row">
+                            <label style="width:40px" title="Hibernation TTL">Hbm_TTL</label>
+                            <div class="slider-row">
+                                <button class="stepper" id="btn-hbm-minus">-</button>
+                                <input type="range" id="set-hbm-range" min="0" max="24" step="1" class="slider">
+                                <button class="stepper" id="btn-hbm-plus">+</button>
                             </div>
+                            <span id="val-hbm" style="width:30px; text-align:right">12h</span>
                         </div>
                         <div class="row" style="justify-content: space-between;">
                             <div style="display:flex; align-items:center; gap:2px;">
@@ -306,6 +311,7 @@ export class RadarUI {
                                 <span style="font-size:9px; color:#aaa; width:8px;">m</span>
                             </div>
                         </div>
+                        </div> <!-- ✨ 结束滚动区域 -->
                         <div class="separator" style="margin: 1px 0;"></div>
                         <div class="actions">
                             <button id="btn-backup" style="background:#1976D2; color:white;">Backup</button>
@@ -557,8 +563,8 @@ export class RadarUI {
         bindControl('set-interval-range', 'val-interval', 'btn-int-minus', 'btn-int-plus', 'update_interval', 0.1, 's');
         bindControl('set-ema-range', 'val-ema', 'btn-ema-minus', 'btn-ema-plus', 'ema_smoothing_level', 7, ' Lvl');
         bindControl('set-merge-range', 'val-merge', 'btn-mrg-minus', 'btn-mrg-plus', 'merge_distance', 0.8, 'm');
-        bindControl('set-verify-input', null, 'btn-vfy-minus', 'btn-vfy-plus', 'verify_delay', 2.5, '');
-        bindControl('set-hbm-input', null, 'btn-hbm-minus', 'btn-hbm-plus', 'hibernation_ttl', 12.0, '');
+        bindControl('set-verify-range', 'val-verify', 'btn-vfy-minus', 'btn-vfy-plus', 'verify_delay', 2.5, 's');
+        bindControl('set-hbm-range', 'val-hbm', 'btn-hbm-minus', 'btn-hbm-plus', 'hibernation_ttl', 12.0, 'h');
         bindControl('set-target-input', null, 'btn-tgt-minus', 'btn-tgt-plus', 'target_height', 1.5, '');
         const colorInput = this.root.getElementById('set-fused-color');
         const colorLabel = this.root.getElementById('val-fused-color');

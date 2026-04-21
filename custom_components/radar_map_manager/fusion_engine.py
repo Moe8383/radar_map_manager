@@ -21,6 +21,7 @@ class FusionEngine:
             maps = data.get("maps", {})
             radars = data.get("radars", {})
             map_targets = {}
+            map_scales = {}
             for r_name, r_conf in radars.items():
                 map_group = r_conf.get("map_group", "default")
                 if map_group not in map_targets: map_targets[map_group] = []
@@ -32,6 +33,9 @@ class FusionEngine:
                 entrance_zones = current_map_zones.get("entrance_zones", [])
                 origin_x = float(layout.get('origin_x', 50))
                 origin_y = float(layout.get('origin_y', 50))
+                sx = float(layout.get('scale_x', 5.0))
+                sy = float(layout.get('scale_y', 5.0))
+                map_scales.setdefault(map_group, []).append((sx + sy) / 2.0)
                 r_conf['targets'] = []
                 for i in range(1, 6):
                     raw_point = self._get_radar_point(r_name, i)
@@ -47,16 +51,6 @@ class FusionEngine:
                     projected = self._calculate_standard_coord(layout, raw_point, target_h)
                     if projected and projected.get('active'):
                         px, py = projected['left'], projected['top']
-                        is_excluded = False
-                        if exclude_zones:
-                            for zone in exclude_zones:
-                                poly = zone.get("points", [])
-                                if poly and len(poly) >= 3:
-                                    if self._point_in_polygon(px, py, poly):
-                                        is_excluded = True
-                                        break
-                        if is_excluded:
-                            continue 
                         if monitor_zones:
                             in_monitor = False
                             for zone in monitor_zones:
@@ -79,7 +73,13 @@ class FusionEngine:
                         map_targets[map_group].append(target_data)
             for map_id, points in map_targets.items():
                 map_entrance = maps.get(map_id, {}).get("zones", {}).get("entrance_zones", [])
-                fused_results = self._cluster_targets(map_id, points, merge_dist, ema_level, update_interval, map_entrance, verify_delay, hibernation_ttl_sec)
+                map_exclude = maps.get(map_id, {}).get("zones", {}).get("exclude_zones", [])
+                scales = map_scales.get(map_id, [5.0])
+                avg_map_scale = sum(scales) / len(scales) if scales else 5.0
+                fused_results = self._cluster_targets(
+                    map_id, points, merge_dist, ema_level, update_interval, 
+                    map_entrance, map_exclude, verify_delay, hibernation_ttl_sec, avg_map_scale
+                )
                 if map_id in maps:
                     maps[map_id]['targets'] = fused_results
                 self._update_master_sensor(map_id, fused_results)
@@ -154,7 +154,7 @@ class FusionEngine:
             return {'left': final_x, 'top': final_y, 'active': True}
         except Exception as e:
             return None
-    def _cluster_targets(self, map_id, points, merge_dist_m=0.8, ema_level=7, update_interval=0.1, entrance_zones=None, verify_delay=2.5, hibernation_ttl_sec=43200.0):
+    def _cluster_targets(self, map_id, points, merge_dist_m=0.8, ema_level=7, update_interval=0.1, entrance_zones=None, exclude_zones=None, verify_delay=2.5, hibernation_ttl_sec=43200, map_scale=5.0):
         import time
         current_time = time.time()
         old_targets = self._history.get(map_id, {})
@@ -168,7 +168,7 @@ class FusionEngine:
                         new_history[old_id]['hibernating'] = True
             self._history[map_id] = new_history
             return [] 
-        merge_threshold = merge_dist_m * 5.0 
+        merge_threshold = merge_dist_m * map_scale
         clusters = []
         used = [False] * len(points)
         for i in range(len(points)):
@@ -213,8 +213,9 @@ class FusionEngine:
             new_centroids.append({'x': avg_x, 'y': avg_y, 'count': len(cl), 'sources': sources})
         results = []
         base_alpha = max(0.1, min(1.0, (11 - ema_level) / 10.0))
-        max_jump_dist = 20.0
-        resurrect_radius = merge_dist_m * 20.0
+        max_jump_m = 1.5 + (2.5 * update_interval)
+        max_jump_dist = max_jump_m * map_scale 
+        resurrect_radius = 1.5 * map_scale
         used_ids = set()
         for t_id in old_targets.keys():
             if t_id.startswith("target_"):
@@ -248,10 +249,9 @@ class FusionEngine:
                 available_old.remove(best_id)
                 old_x = old_targets[best_id]['x']
                 old_y = old_targets[best_id]['y']
-                speed_ratio = max(0.01, update_interval) / 0.1
-                still_threshold = 0.2 * speed_ratio 
-                walk_threshold  = 1.5 * speed_ratio 
-                jump_threshold  = 4.0 * speed_ratio 
+                still_threshold = 0.2 * map_scale 
+                walk_threshold  = 1.0 * map_scale 
+                jump_threshold  = 1.5 * map_scale
                 if best_dist < still_threshold: current_alpha = base_alpha * 0.5
                 elif best_dist < walk_threshold: current_alpha = base_alpha
                 elif best_dist > jump_threshold: current_alpha = 1.0
@@ -263,9 +263,10 @@ class FusionEngine:
                 target_id = best_id
                 spawn_time = old_targets[best_id].get('spawn_time', current_time)
                 is_verified = old_targets[best_id].get('is_verified', False)
+                is_valid_birth = old_targets[best_id].get('is_valid_birth', True)
                 if is_resurrected:
                     is_verified = True
-                elif not is_verified and (current_time - spawn_time) > verify_delay:
+                elif not is_verified and is_valid_birth and (current_time - spawn_time) >= verify_delay:
                     is_verified = True 
             else:
                 smoothed_x = new_c['x']
@@ -276,33 +277,53 @@ class FusionEngine:
                 target_id = f"target_{new_id_num}"
                 spawn_time = current_time
                 is_verified = False
-                if not entrance_zones:
-                    is_verified = True 
-                else:
+                is_valid_birth = True
+                if exclude_zones:
+                    for zone in exclude_zones:
+                        poly = zone.get("points", [])
+                        if poly and len(poly) >= 3:
+                            if self._point_in_polygon(smoothed_x, smoothed_y, poly):
+                                is_valid_birth = False
+                                break
+                if is_valid_birth and entrance_zones:
                     for zone in entrance_zones:
                         poly = zone.get("points", [])
                         if poly and len(poly) >= 3:
                             if self._point_in_polygon(smoothed_x, smoothed_y, poly):
                                 is_verified = True 
                                 break
+                is_verified = False
+                if is_valid_birth and verify_delay <= 0.001:
+                    is_verified = True
             if is_verified:
-                results.append({
-                    "id": target_id,
-                    "x": round(smoothed_x, 2), 
-                    "y": round(smoothed_y, 2),
-                    "count": new_c['count'], 
-                    "sources": new_c['sources']
-                })
+                currently_excluded = False
+                if exclude_zones:
+                    for zone in exclude_zones:
+                        poly = zone.get("points", [])
+                        if poly and len(poly) >= 3:
+                            if self._point_in_polygon(smoothed_x, smoothed_y, poly):
+                                currently_excluded = True
+                                break
+                if not currently_excluded:
+                    results.append({
+                        "id": target_id,
+                        "x": round(smoothed_x, 2), 
+                        "y": round(smoothed_y, 2),
+                        "count": new_c['count'], 
+                        "sources": new_c['sources']
+                    })
             new_history[target_id] = {
                 'x': smoothed_x, 'y': smoothed_y,
                 'is_verified': is_verified,
+                'is_valid_birth': is_valid_birth,
                 'spawn_time': spawn_time,
                 'last_seen': current_time,
                 'hibernating': False
             }
         for old_id in available_old:
             old_t = dict(old_targets[old_id]) 
-            if old_t.get('is_verified', False):
+            lifespan = current_time - old_t.get('spawn_time', current_time)
+            if old_t.get('is_verified', False) and lifespan >= verify_delay:
                 if (current_time - old_t.get('last_seen', current_time)) < hibernation_ttl_sec:
                     old_t['hibernating'] = True
                     new_history[old_id] = old_t
