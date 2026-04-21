@@ -316,6 +316,7 @@ export class RadarUI {
                         <div class="actions">
                             <button id="btn-backup" style="background:#1976D2; color:white;">Backup</button>
                             <button id="btn-restore" style="background:#F57F17; color:black;">Restore</button>
+                            <button id="btn-reset" style="background:#D32F2F; color:white;" title="Clear Tracking History">Reset</button>
                         </div>
                         <input type="file" id="file-upload" accept=".json" style="display:none">
                     </div>
@@ -579,6 +580,20 @@ export class RadarUI {
                     if(colorLabel) colorLabel.innerText = newColor.toUpperCase();
                 if(state.hass) {
                     state.hass.callService('radar_map_manager', 'update_global_config', { fused_color: newColor });
+                }
+            };
+        }
+        const btnReset = this.root.getElementById('btn-reset');
+        if (btnReset) {
+            btnReset.onclick = () => {
+                const lang = (state.hass && state.hass.language) || 'en';
+                const confirmMsg = lang.startsWith('zh') 
+                    ? "确定重置目标跟踪并重新编号吗？(Clear Tracking History)" 
+                    : "Are you sure you want to clear tracking history and reassign target IDs?";
+                if (confirm(confirmMsg)) {
+                    if (state.hass) {
+                        state.hass.callService('radar_map_manager', 'reset_tracking_history', {});
+                    }
                 }
             };
         }

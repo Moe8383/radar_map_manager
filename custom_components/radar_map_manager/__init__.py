@@ -315,6 +315,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             await processor.update(force=True)
         except Exception as e:
             _LOGGER.error(f"RMM: Import failed: {e}")
+    async def handle_reset_history(call: ServiceCall):
+        if coordinator.data:
+            coordinator.data["_force_reset_history"] = True
+        await processor.update(force=True)
     hass.services.async_register(DOMAIN, "add_radar", handle_add_radar, schema=ADD_RADAR_SCHEMA)
     hass.services.async_register(DOMAIN, "remove_radar", handle_remove_radar, schema=REMOVE_RADAR_SCHEMA)
     hass.services.async_register(DOMAIN, "update_radar_zone", handle_update_radar_zone, schema=UPDATE_ZONE_SCHEMA)
@@ -322,6 +326,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     hass.services.async_register(DOMAIN, "generate_radar_config", handle_generate_config)
     hass.services.async_register(DOMAIN, "update_global_config", handle_update_global_config, schema=UPDATE_GLOBAL_CONFIG_SCHEMA)
     hass.services.async_register(DOMAIN, "import_config", handle_import_config)
+    hass.services.async_register(DOMAIN, "reset_tracking_history", handle_reset_history)
     @callback
     def on_radar_info(msg):
         if not msg.payload:

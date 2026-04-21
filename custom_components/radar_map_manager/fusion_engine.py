@@ -11,6 +11,9 @@ class FusionEngine:
         try:
             data = self.coordinator.data
             if not data: return
+            if data.pop("_force_reset_history", False):
+                self._history.clear()
+                _LOGGER.info("RMM: Tracking history has been manually reset (Reflash).")
             global_config = data.get("global_config", {})
             merge_dist = float(global_config.get("merge_distance", 0.8))
             target_h = float(global_config.get("target_height", 1.5))
