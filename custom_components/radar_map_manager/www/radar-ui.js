@@ -20,6 +20,7 @@ export class RadarUI {
                 <svg id="svg-canvas" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
                 <div id="dots-layer"></div>
                 <div id="click-layer"></div>
+                <div id="ws-status-dot" title="Connecting..." style="position: absolute; top: 12px; right: 40px; width: 10px; height: 10px; border-radius: 50%; background: #ffc107; box-shadow: 0 0 5px #ffc107; z-index: 5; transition: background 0.3s;"></div>
                 <button id="btn-toggle-mode" title="Toggle Edit Mode">⚙️</button>
             `;
             this.root.appendChild(container);
@@ -248,23 +249,21 @@ export class RadarUI {
                     </div>
                     <div id="settings-tools" class="content hidden">
                         <div class="scroll-area" style="display:flex; flex-direction:column; gap:3px; margin-top:5px;">
-                        <div class="row">
-                            <label style="width:40px">Update</label>
+                        <div class="row" style="border-bottom: 1px solid #333; padding-bottom: 4px; margin-bottom: 4px;">
+                            <label style="width:40px; display:flex; align-items:center; justify-content:flex-end; gap:2px; cursor:pointer; color:#1976D2; font-weight:bold;" title="Check: Continuous Tracking. Uncheck: Simple Fusion Mode.">
+                                <input type="checkbox" id="chk-enable-tracking" style="margin:0; width:10px; height:10px;">
+                                Track
+                            </label>
+                            <span style="font-size:9px; color:#888; flex:1; margin-left:2px;">Target Tracking & Anti-Ghost</span>
+                        </div>
+                        <div class="row" title="Backend polling & calculation interval (seconds)">
+                            <label style="width:40px">Interval</label>
                             <div class="slider-row">
                                 <button class="stepper" id="btn-int-minus">-</button>
                                 <input type="range" id="set-interval-range" min="0.1" max="2.0" step="0.1" class="slider">
                                 <button class="stepper" id="btn-int-plus">+</button>
                             </div>
                             <span id="val-interval" style="width:30px; text-align:right">0.1s</span>
-                        </div>
-                        <div class="row">
-                            <label style="width:40px">Smooth</label>
-                            <div class="slider-row">
-                                <button class="stepper" id="btn-ema-minus">-</button>
-                                <input type="range" id="set-ema-range" min="1" max="10" step="1" class="slider">
-                                <button class="stepper" id="btn-ema-plus">+</button>
-                            </div>
-                            <span id="val-ema" style="width:30px; text-align:right">7 Lvl</span>
                         </div>
                         <div class="row">
                             <label style="width:40px">Merge</label>
@@ -275,7 +274,16 @@ export class RadarUI {
                             </div>
                             <span id="val-merge" style="width:30px; text-align:right">0.8m</span>
                         </div>
-                        <div class="row">
+                        <div class="row" id="row-ema">
+                            <label style="width:40px">Smooth</label>
+                            <div class="slider-row">
+                                <button class="stepper" id="btn-ema-minus">-</button>
+                                <input type="range" id="set-ema-range" min="1" max="10" step="1" class="slider">
+                                <button class="stepper" id="btn-ema-plus">+</button>
+                            </div>
+                            <span id="val-ema" style="width:30px; text-align:right">7 Lvl</span>
+                        </div>
+                        <div class="row" id="row-verify">
                             <label style="width:40px; display:flex; align-items:center; justify-content:flex-end; gap:2px; cursor:pointer;" title="Check: Allow spawning anywhere with delay. Uncheck: Strict Entrance only.">
                                 <input type="checkbox" id="chk-enable-verify" style="margin:0; width:10px; height:10px;">
                                 Verify
@@ -287,7 +295,7 @@ export class RadarUI {
                             </div>
                             <span id="val-verify" style="width:30px; text-align:right">2.5s</span>
                         </div>
-                        <div class="row">
+                        <div class="row" id="row-hbm">
                             <label style="width:40px" title="Hibernation TTL">Hbm_TTL</label>
                             <div class="slider-row">
                                 <button class="stepper" id="btn-hbm-minus">-</button>
@@ -296,7 +304,16 @@ export class RadarUI {
                             </div>
                             <span id="val-hbm" style="width:30px; text-align:right">12h</span>
                         </div>
-                        <div class="row">
+                        <div class="row" id="row-sh">
+                            <label style="width:40px" title="Time to keep target alive in Stationary Zone">S_Hold</label>
+                            <div class="slider-row">
+                                <button class="stepper" id="btn-sh-minus">-</button>
+                                <input type="range" id="set-sh-range" min="0" max="3600" step="30" class="slider">
+                                <button class="stepper" id="btn-sh-plus">+</button>
+                            </div>
+                            <span id="val-sh" style="width:30px; text-align:right">300s</span>
+                        </div>
+                        <div class="row" id="row-mjb">
                             <label style="width:40px" title="Base spatial tolerance (Radar drift limit)">J_Base</label>
                             <div class="slider-row">
                                 <button class="stepper" id="btn-mjb-minus">-</button>
@@ -305,7 +322,7 @@ export class RadarUI {
                             </div>
                             <span id="val-mjb" style="width:30px; text-align:right">1.5m</span>
                         </div>
-                        <div class="row">
+                        <div class="row" id="row-mjs">
                             <label style="width:40px" title="Max human movement speed">J_Speed</label>
                             <div class="slider-row">
                                 <button class="stepper" id="btn-mjs-minus">-</button>
@@ -359,6 +376,23 @@ export class RadarUI {
         if (btnToggle) {
             if (state.editing) { btnToggle.innerText = "❌"; btnToggle.classList.add('active'); }
             else { btnToggle.innerText = "⚙️"; btnToggle.classList.remove('active'); }
+        }
+        const wsDot = this.root.getElementById('ws-status-dot');
+        if (wsDot) {
+            if (config && config.read_only) {
+                wsDot.style.display = 'none';
+            } else {
+                wsDot.style.display = 'block';
+                if (state.isConnected) {
+                    wsDot.style.background = '#28a745';
+                    wsDot.style.boxShadow = '0 0 5px #28a745';
+                    wsDot.title = 'HA Connected';
+                } else {
+                    wsDot.style.background = '#dc3545';
+                    wsDot.style.boxShadow = '0 0 5px #dc3545';
+                    wsDot.title = 'HA Disconnected';
+                }
+            }
         }
         const lPanel = this.root.getElementById('layout-tools');
         const zPanel = this.root.getElementById('zone-tools');
@@ -417,9 +451,10 @@ export class RadarUI {
                     selType.innerHTML = `
                         <option value="include_zones">🟢 Detect Trigger</option>
                         <option value="exclude_zones">🔴 Detect Exclude</option>
-                        <option value="entrance_zones">🟦 Entrance Zone</option> `;
+                        <option value="entrance_zones">🟦 Entrance Zone</option>
+                        <option value="stationary_zones">🟪 Stationary Hold</option>`;
                 }
-                if (state.type !== 'include_zones' && state.type !== 'exclude_zones' && state.type !== 'entrance_zones') {
+                if (!['include_zones', 'exclude_zones', 'entrance_zones', 'stationary_zones'].includes(state.type)) {
                     selType.value = 'include_zones';
                 } else {
                     selType.value = state.type;
@@ -575,7 +610,8 @@ export class RadarUI {
                 if (lbl) lbl.innerText = newValue.toFixed(1) + unit;
                 if(state.hass) {
                     const payload = {}; payload[configKey] = newValue;
-                    state.hass.callService('radar_map_manager', 'update_global_config', payload);
+                payload.map_group = state.mapGroup || "default";
+                state.hass.callService('radar_map_manager', 'update_map_config', payload);
                 }
             };
             if (btnMinus) btnMinus.onclick = () => updateAndSave(parseFloat(slider.value) - step);
@@ -590,6 +626,27 @@ export class RadarUI {
         bindControl('set-target-input', null, 'btn-tgt-minus', 'btn-tgt-plus', 'target_height', 1.5, '');
         bindControl('set-mjb-range', 'val-mjb', 'btn-mjb-minus', 'btn-mjb-plus', 'max_jump_base', 1.5, 'm');
         bindControl('set-mjs-range', 'val-mjs', 'btn-mjs-minus', 'btn-mjs-plus', 'max_jump_speed', 2.5, 'm/s');
+        bindControl('set-sh-range', 'val-sh', 'btn-sh-minus', 'btn-sh-plus', 'stationary_max_hold', 300, 's');
+        const chkTrack = this.root.getElementById('chk-enable-tracking');
+        if (chkTrack) {
+            let isTrackEn = (conf.enable_tracking !== undefined) ? conf.enable_tracking : true;
+            if (this.root.activeElement !== chkTrack) chkTrack.checked = isTrackEn;
+            const updateTrackState = () => {
+                const op = chkTrack.checked ? '1' : '0.3';
+                const ptr = chkTrack.checked ? 'auto' : 'none';
+                ['row-ema', 'row-verify', 'row-hbm', 'row-sh', 'row-mjb', 'row-mjs'].forEach(id => {
+                    const el = this.root.getElementById(id);
+                    if(el) { el.style.opacity = op; el.style.pointerEvents = ptr; }
+                });
+            };
+            updateTrackState();
+            chkTrack.onchange = (e) => {
+                updateTrackState();
+                if(state.hass) {
+                    state.hass.callService('radar_map_manager', 'update_map_config', { map_group: state.mapGroup || "default", enable_tracking: e.target.checked });
+                }
+            };
+        }
         const chkVerify = this.root.getElementById('chk-enable-verify');
         if (chkVerify) {
             let isEnabled = (conf.enable_verify_rule !== undefined) ? conf.enable_verify_rule : true;
@@ -606,7 +663,7 @@ export class RadarUI {
             chkVerify.onchange = (e) => {
                 updateVfyState();
                 if(state.hass) {
-                    state.hass.callService('radar_map_manager', 'update_global_config', { enable_verify_rule: e.target.checked });
+                    state.hass.callService('radar_map_manager', 'update_map_config', { map_group: state.mapGroup || "default", enable_verify_rule: e.target.checked });
                 }
             };
         }
@@ -622,7 +679,7 @@ export class RadarUI {
                 const newColor = e.target.value;
                     if(colorLabel) colorLabel.innerText = newColor.toUpperCase();
                 if(state.hass) {
-                    state.hass.callService('radar_map_manager', 'update_global_config', { fused_color: newColor });
+                state.hass.callService('radar_map_manager', 'update_map_config', { map_group: state.mapGroup || "default", fused_color: newColor });
                 }
             };
         }

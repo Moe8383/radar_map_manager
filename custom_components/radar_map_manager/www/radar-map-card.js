@@ -175,7 +175,7 @@ class RadarMapCardNative extends HTMLElement {
         const v1Data = {};
         const mapData = (v2Data.maps && v2Data.maps[mapGroup]) || {};
         v1Data.global_zones = mapData.zones || { include_zones: [], exclude_zones: [] };
-        v1Data.global_config = v2Data.global_config || { update_interval: 0.1, merge_distance: 0.8 };
+        v1Data.global_config = mapData.config || { update_interval: 0.1, merge_distance: 0.8 };
         this.state.fused_targets = mapData.targets || []; 
         const allRadars = v2Data.radars || {};
         Object.keys(allRadars).forEach(rName => {

@@ -66,7 +66,8 @@ UPDATE_LAYOUT_SCHEMA = vol.Schema({
     vol.Required("layout"): dict,
     vol.Optional("map_group"): cv.string,
 })
-UPDATE_GLOBAL_CONFIG_SCHEMA = vol.Schema({
+UPDATE_MAP_CONFIG_SCHEMA = vol.Schema({
+    vol.Required("map_group"): cv.string,
     vol.Optional("update_interval"): vol.Coerce(float),
     vol.Optional("merge_distance"): vol.Coerce(float),
     vol.Optional("target_height"): vol.Coerce(float),
@@ -75,8 +76,10 @@ UPDATE_GLOBAL_CONFIG_SCHEMA = vol.Schema({
     vol.Optional("verify_delay"): vol.Coerce(float),
     vol.Optional("hibernation_ttl"): vol.Coerce(float),
     vol.Optional("enable_verify_rule"): vol.Coerce(bool),
+    vol.Optional("enable_tracking"): vol.Coerce(bool),
     vol.Optional("max_jump_base"): vol.Coerce(float),
     vol.Optional("max_jump_speed"): vol.Coerce(float),
+    vol.Optional("stationary_max_hold"): vol.Coerce(float),
 })
 def get_t(hass, key, *args):
     lang = hass.config.language if hasattr(hass.config, 'language') else 'en'
@@ -283,10 +286,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         await broadcast_monitor_zones()
     async def handle_generate_config(call: ServiceCall):
         await processor.update(force=True)
-    async def handle_update_global_config(call: ServiceCall):
-        await coordinator.async_update_global_config(call.data)
-        if "update_interval" in call.data:
-            start_processing_loop(float(call.data["update_interval"]))
+    async def handle_update_map_config(call: ServiceCall):
+        map_group = call.data["map_group"]
+        await coordinator.async_update_map_config(map_group, call.data)
+        min_interval = 0.1
+        if coordinator.data and "maps" in coordinator.data:
+            intervals = [m.get("config", {}).get("update_interval", 0.1) for m in coordinator.data["maps"].values()]
+            if intervals: min_interval = min(intervals)
+        start_processing_loop(float(min_interval))
         await processor.update(force=True)
     async def handle_import_config(call: ServiceCall):
         try:
@@ -298,11 +305,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                     "radars": {},
                     "maps": {
                         "default": {
-                            "zones": new_data.get("global_zones", {})
+                            "zones": new_data.get("global_zones", {}),
+                            "config": new_data.get("global_config", {})
                         }
                     },
-                    "global_config": new_data.get("global_config", {})
                 }
+                if "global_config" in new_data:
+                    old_global = new_data.pop("global_config")
+                    for m_id, m_data in new_data.get("maps", {}).items():
+                        if "config" not in m_data: m_data["config"] = old_global.copy()
                 for k, v in new_data.items():
                     if k not in ["global_zones", "global_config", "maps", "radars"]:
                         migrated_data["radars"][k] = v
@@ -313,8 +324,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             await coordinator.async_save()
             await broadcast_hw_zones()
             await broadcast_monitor_zones()
-            saved_interval = new_data.get("global_config", {}).get("update_interval", 0.1)
-            start_processing_loop(saved_interval)
+            intervals = [m.get("config", {}).get("update_interval", 0.1) for m in new_data.get("maps", {}).values()]
+            start_processing_loop(min(intervals) if intervals else 0.1)
             await processor.update(force=True)
         except Exception as e:
             _LOGGER.error(f"RMM: Import failed: {e}")
@@ -327,7 +338,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     hass.services.async_register(DOMAIN, "update_radar_zone", handle_update_radar_zone, schema=UPDATE_ZONE_SCHEMA)
     hass.services.async_register(DOMAIN, "update_radar_layout", handle_update_radar_layout, schema=UPDATE_LAYOUT_SCHEMA)
     hass.services.async_register(DOMAIN, "generate_radar_config", handle_generate_config)
-    hass.services.async_register(DOMAIN, "update_global_config", handle_update_global_config, schema=UPDATE_GLOBAL_CONFIG_SCHEMA)
+    hass.services.async_register(DOMAIN, "update_map_config", handle_update_map_config, schema=UPDATE_MAP_CONFIG_SCHEMA)
     hass.services.async_register(DOMAIN, "import_config", handle_import_config)
     hass.services.async_register(DOMAIN, "reset_tracking_history", handle_reset_history)
     @callback
@@ -568,9 +579,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     websocket_api.async_register_command(hass, websocket_global_stream)
     await processor.async_start()
     async def initial_startup(event):
-        saved_config = coordinator.data.get("global_config", {})
-        interval = float(saved_config.get("update_interval", 0.1))
-        start_processing_loop(interval)
+        min_interval = 0.1
+        if coordinator.data and "maps" in coordinator.data:
+            intervals = [m.get("config", {}).get("update_interval", 0.1) for m in coordinator.data["maps"].values()]
+            if intervals: min_interval = min(intervals)
+        start_processing_loop(float(min_interval))
         await processor.update(force=True)
         await broadcast_hw_zones()
         try:

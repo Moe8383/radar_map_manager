@@ -16,21 +16,23 @@ class RadarCoordinator:
     def _get_empty_data(self):
         return {
             "version": DATA_VERSION,
-            "global_config": {
-                "update_interval": 0.1, 
-                "merge_distance": 0.8,
-                "target_height": 1.5,
-                "fused_color": "#FFD700",
-                "ema_smoothing_level": 7,
-                "verify_delay": 2.5,
-                "hibernation_ttl": 12.0,
-                "enable_verify_rule": True,
-                "max_jump_base": 1.0,
-                "max_jump_speed": 2.5
-            },
             "maps": {
                 "default": {
-                    "zones": {"include_zones": [], "exclude_zones": []}
+                    "zones": {"include_zones": [], "exclude_zones": [], "entrance_zones": [], "stationary_zones": []},
+                    "config": {
+                        "update_interval": 0.1, 
+                        "merge_distance": 0.8,
+                        "target_height": 1.5,
+                        "fused_color": "#FFD700",
+                        "ema_smoothing_level": 7,
+                        "verify_delay": 2.5,
+                        "hibernation_ttl": 12.0,
+                        "enable_verify_rule": True,
+                        "enable_tracking": True,
+                        "max_jump_base": 1.0,
+                        "max_jump_speed": 2.5,
+                        "stationary_max_hold": 300.0
+                    }
                 }
             },
             "radars": {}
@@ -61,11 +63,16 @@ class RadarCoordinator:
         self.data = raw_data
         if "maps" not in self.data: self.data["maps"] = {}
         if "default" not in self.data["maps"]:
-            self.data["maps"]["default"] = {"zones": {"include_zones": [], "exclude_zones": []}}
+            self.data["maps"]["default"] = {"zones": {"include_zones": [], "exclude_zones": []}, "config": {}}
         if "radars" not in self.data: self.data["radars"] = {}
-        if "global_config" not in self.data: self.data["global_config"] = {}
-        if "fused_color" not in self.data["global_config"]:
-            self.data["global_config"]["fused_color"] = "#FFD700"
+        if "global_config" in self.data:
+            old_global = self.data.pop("global_config")
+            for m_id, m_data in self.data["maps"].items():
+                if "config" not in m_data: m_data["config"] = old_global.copy()
+        default_cfg = self._get_empty_data()["maps"]["default"]["config"]
+        for m_id, m_data in self.data["maps"].items():
+            if "config" not in m_data: m_data["config"] = default_cfg.copy()
+            if "fused_color" not in m_data["config"]: m_data["config"]["fused_color"] = "#FFD700"
         _LOGGER.info(f"RMM: Data loaded (V{self.data.get('version', 1)}).")
     async def async_save(self):
         await self._store.async_save(self.data)
@@ -78,7 +85,7 @@ class RadarCoordinator:
             "monitor_zones": []
         }
         if map_group not in self.data["maps"]:
-            self.data["maps"][map_group] = {"zones": {"include_zones": [], "exclude_zones": []}}
+            self.data["maps"][map_group] = {"zones": {"include_zones": [], "exclude_zones": []}, "config": self._get_empty_data()["maps"]["default"]["config"].copy()}
         await self.async_save()
     async def async_remove_radar(self, name):
         if name in self.data["radars"]:
@@ -92,8 +99,8 @@ class RadarCoordinator:
                 return
         target_map = map_group or "default"
         if target_map not in self.data["maps"]:
-             self.data["maps"][target_map] = {"zones": {"include_zones": [], "exclude_zones": []}}
-        if zone_type in ["include_zones", "exclude_zones"]:
+            self.data["maps"][target_map] = {"zones": {"include_zones": [], "exclude_zones": []}}
+        if zone_type in ["include_zones", "exclude_zones", "entrance_zones", "stationary_zones"]:
             self.data["maps"][target_map]["zones"][zone_type] = points
             await self.async_save()
     async def async_update_layout(self, radar_name, layout, map_group=None):
@@ -106,7 +113,11 @@ class RadarCoordinator:
                 if map_group not in self.data["maps"]:
                     self.data["maps"][map_group] = {"zones": {"include_zones": [], "exclude_zones": []}}
             await self.async_save()
-    async def async_update_global_config(self, config_data):
-        if "global_config" not in self.data: self.data["global_config"] = {}
-        self.data["global_config"].update(config_data)
+    async def async_update_map_config(self, map_group, config_data):
+        if map_group not in self.data["maps"]:
+            self.data["maps"][map_group] = {"zones": {}, "config": {}}
+        if "config" not in self.data["maps"][map_group]:
+            self.data["maps"][map_group]["config"] = {}
+        safe_data = {k: v for k, v in config_data.items() if k != "map_group"}
+        self.data["maps"][map_group]["config"].update(safe_data)
         await self.async_save()

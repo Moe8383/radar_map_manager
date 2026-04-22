@@ -179,7 +179,7 @@ export class RadarRenderer {
         const showLabels = config.show_labels !== false; 
         const handleStroke = config.handle_stroke || 1; 
         const labelSize = parseFloat(config.label_size) || 3.5;
-        const TYPE_COLORS = { 'monitor_zones': '#FFD700', 'include_zones': '#00FF00', 'exclude_zones': '#FF0000', 'hardware_zones': '#9C27B0', 'entrance_zones': '#00BFFF' };
+        const TYPE_COLORS = { 'monitor_zones': '#FFD700', 'include_zones': '#00FF00', 'exclude_zones': '#FF0000', 'hardware_zones': '#9C27B0', 'entrance_zones': '#00BFFF', 'stationary_zones': '#E040FB' };
         const createPoly = (obj, typeKey, pIdx, rName) => {
             const group = this._create('g', { 'data-type': typeKey, 'data-index': pIdx, 'data-radar': rName || '' });
             const pts = Array.isArray(obj) ? obj : obj.points;
@@ -300,7 +300,7 @@ export class RadarRenderer {
             });
         }
         const globalZones = (state.data && state.data.global_zones) || {};
-        ['include_zones', 'exclude_zones', 'entrance_zones'].forEach(tKey => {
+        ['include_zones', 'exclude_zones', 'entrance_zones', 'stationary_zones'].forEach(tKey => {
             const list = globalZones[tKey];
             if (Array.isArray(list)) {
                 list.forEach((p, i) => drawTasks.push({ obj: p, type: tKey, idx: i, rName: 'global', area: this._calculateArea(Array.isArray(p)?p:p.points) })); 
@@ -341,13 +341,15 @@ export class RadarRenderer {
             dot.style.left = tx + '%'; dot.style.top = ty + '%'; 
         } else {
         const targetRadius = config.target_radius || 8;
-        const showLabels = config.show_labels !== false;
         const mapGroup = state.mapGroup || "default";
         const safeId = mapGroup.toLowerCase().replace(/ /g, "_");
         const fusionEnt = hass.states[`sensor.rmm_${safeId}_master`];
         const hasFusionData = fusionEnt && fusionEnt.attributes.targets && fusionEnt.attributes.targets.length > 0;
         const globalConfig = (state.data && state.data.global_config) || {};
         const fusedColor = config.fused_color || globalConfig.fused_color || '#FFD700';
+        const isTracking = globalConfig.enable_tracking !== false;
+        const showLabels = config.show_labels !== false && isTracking;
+        const transitionStyle = isTracking ? 'left 0.15s linear, top 0.15s linear, opacity 0.3s, border 0.3s' : 'opacity 0.3s, border 0.3s';
         const globalZones = (state.data && state.data.global_zones) || {};
         const excludeZones = globalZones.exclude_zones || [];
         if (state.editMode === 'zone' || state.editMode === 'settings' || !state.editing) {
@@ -363,16 +365,39 @@ export class RadarRenderer {
                         dot = document.createElement('div');
                         dot.id = dotId; dot.className = 'dot';
                         dot.style.width = `${targetRadius * 2}px`; dot.style.height = `${targetRadius * 2}px`;
-                        dot.style.background = fusedColor; dot.style.border = '2px solid white'; 
-                        dot.style.boxShadow = `0 0 8px ${fusedColor}`; dot.style.color = 'white'; 
+                        dot.style.color = 'white'; 
                         const strokeW = Math.max(0.5, targetRadius * 0.08); 
                         dot.style.webkitTextStroke = `${strokeW}px black`;
                         dot.style.paintOrder = "stroke fill"; dot.style.textShadow = 'none'; 
                         dot.style.fontWeight = '900'; 
                         const fontSize = Math.max(9, targetRadius * 1.3); 
                         dot.style.fontSize = `${fontSize}px`;
-                        dot.style.transition = 'left 0.15s linear, top 0.15s linear';
                         layer.appendChild(dot);
+                    }
+                    dot.style.transition = transitionStyle;
+                    const isHold = t.sources && t.sources.includes("hold");
+                    const isHibernating = t.sources && t.sources.includes("hibernating");
+                    const isUnverified = t.sources && t.sources.includes("unverified");
+                    if (isHold) {
+                        dot.style.opacity = '0.6';
+                        dot.style.border = `2px dashed ${fusedColor}`;
+                        dot.style.background = 'transparent';
+                        dot.style.boxShadow = `0 0 5px ${fusedColor}`;
+                    } else if (isHibernating) {
+                        dot.style.opacity = '0.3';
+                        dot.style.border = '1px solid rgba(255,255,255,0.5)';
+                        dot.style.background = '#555'; 
+                        dot.style.boxShadow = 'none';
+                    } else if (isUnverified) {
+                        dot.style.opacity = '0.8';
+                        dot.style.border = '2px solid #FF9800'; 
+                        dot.style.background = 'transparent';
+                        dot.style.boxShadow = 'none';
+                    } else {
+                        dot.style.opacity = '1.0';
+                        dot.style.border = '2px solid white';
+                        dot.style.background = fusedColor;
+                        dot.style.boxShadow = `0 0 8px ${fusedColor}`;
                     }
                     dot.style.left = t.x + '%'; 
                     dot.style.top = t.y + '%'; 

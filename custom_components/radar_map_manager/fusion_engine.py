@@ -14,22 +14,14 @@ class FusionEngine:
             if data.pop("_force_reset_history", False):
                 self._history.clear()
                 _LOGGER.info("RMM: Tracking history has been manually reset (Reflash).")
-            global_config = data.get("global_config", {})
-            merge_dist = float(global_config.get("merge_distance", 0.8))
-            target_h = float(global_config.get("target_height", 1.5))
-            ema_level = int(global_config.get("ema_smoothing_level", 7))
-            update_interval = float(global_config.get("update_interval", 0.1))
-            verify_delay = float(global_config.get("verify_delay", 2.5))
-            hibernation_ttl_sec = float(global_config.get("hibernation_ttl", 12.0)) * 3600.0
-            enable_verify_rule = bool(global_config.get("enable_verify_rule", True))
-            max_jump_base = float(global_config.get("max_jump_base", 1.0))
-            max_jump_speed = float(global_config.get("max_jump_speed", 2.5))
             maps = data.get("maps", {})
             radars = data.get("radars", {})
             map_targets = {}
             map_scales = {}
             for r_name, r_conf in radars.items():
                 map_group = r_conf.get("map_group", "default")
+                map_config = maps.get(map_group, {}).get("config", {})
+                target_h = float(map_config.get("target_height", 1.5))
                 if map_group not in map_targets: map_targets[map_group] = []
                 layout = r_conf.get("layout", {})
                 monitor_zones = r_conf.get("monitor_zones", [])
@@ -80,12 +72,24 @@ class FusionEngine:
             for map_id, points in map_targets.items():
                 map_entrance = maps.get(map_id, {}).get("zones", {}).get("entrance_zones", [])
                 map_exclude = maps.get(map_id, {}).get("zones", {}).get("exclude_zones", [])
+                map_stationary = maps.get(map_id, {}).get("zones", {}).get("stationary_zones", [])
+                map_config = maps.get(map_id, {}).get("config", {})
+                merge_dist = float(map_config.get("merge_distance", 0.8))
+                ema_level = int(map_config.get("ema_smoothing_level", 7))
+                update_interval = float(map_config.get("update_interval", 0.1))
+                verify_delay = float(map_config.get("verify_delay", 2.5))
+                hibernation_ttl_sec = float(map_config.get("hibernation_ttl", 12.0)) * 3600.0
+                enable_verify_rule = bool(map_config.get("enable_verify_rule", True))
+                enable_tracking = bool(map_config.get("enable_tracking", True))
+                max_jump_base = float(map_config.get("max_jump_base", 1.0))
+                max_jump_speed = float(map_config.get("max_jump_speed", 2.5))
+                stationary_max_hold_sec = float(map_config.get("stationary_max_hold", 300.0))
                 scales = map_scales.get(map_id, [5.0])
                 avg_map_scale = sum(scales) / len(scales) if scales else 5.0
                 fused_results = self._cluster_targets(
-                    map_id, points, merge_dist, ema_level, update_interval, 
-                    map_entrance, map_exclude, verify_delay, hibernation_ttl_sec, avg_map_scale, enable_verify_rule,
-                    max_jump_base, max_jump_speed
+                    map_id, points, merge_dist, ema_level, update_interval,
+                    map_entrance, map_exclude, map_stationary, verify_delay, hibernation_ttl_sec, avg_map_scale, enable_verify_rule,
+                    max_jump_base, max_jump_speed, stationary_max_hold_sec, enable_tracking
                 )
                 if map_id in maps:
                     maps[map_id]['targets'] = fused_results
@@ -161,7 +165,7 @@ class FusionEngine:
             return {'left': final_x, 'top': final_y, 'active': True}
         except Exception as e:
             return None
-    def _cluster_targets(self, map_id, points, merge_dist_m=0.8, ema_level=7, update_interval=0.1, entrance_zones=None, exclude_zones=None, verify_delay=2.5, hibernation_ttl_sec=43200, map_scale=5.0, enable_verify_rule=True, max_jump_base=1.0, max_jump_speed=2.5):
+    def _cluster_targets(self, map_id, points, merge_dist_m=0.8, ema_level=7, update_interval=0.1, entrance_zones=None, exclude_zones=None, stationary_zones=None, verify_delay=2.5, hibernation_ttl_sec=43200, map_scale=5.0, enable_verify_rule=True, max_jump_base=1.0, max_jump_speed=2.5, stationary_max_hold_sec=300.0, enable_tracking=True):
         import time
         current_time = time.time()
         old_targets = self._history.get(map_id, {})
@@ -218,6 +222,27 @@ class FusionEngine:
                 avg_y = sum(p['y'] for p in cl) / len(cl)
             sources = [f"{p['radar']}:{p['raw_id']}" for p in cl]
             new_centroids.append({'x': avg_x, 'y': avg_y, 'count': len(cl), 'sources': sources})
+        if not enable_tracking:
+            results = []
+            for idx, new_c in enumerate(new_centroids):
+                x, y = new_c['x'], new_c['y']
+                in_exclude = False
+                if exclude_zones:
+                    for zone in exclude_zones:
+                        poly = zone.get("points", [])
+                        if poly and len(poly) >= 3 and self._point_in_polygon(x, y, poly):
+                            in_exclude = True
+                            break
+                if in_exclude: continue
+                results.append({
+                    "id": f"target_{idx+1}",
+                    "x": round(x, 2), 
+                    "y": round(y, 2),
+                    "count": new_c['count'], 
+                    "sources": new_c['sources']
+                })
+            self._history[map_id] = {}
+            return results
         results = []
         base_alpha = max(0.1, min(1.0, (11 - ema_level) / 10.0))
         max_jump_m = max_jump_base + (max_jump_speed * update_interval)
@@ -234,7 +259,7 @@ class FusionEngine:
             best_dist = float('inf')
             is_resurrected = False
             for old_id in available_old:
-                if not old_targets[old_id].get('hibernating', False):
+                if not old_targets[old_id].get('hibernating', False) and old_targets[old_id].get('is_verified', False):
                     ox = old_targets[old_id]['x']
                     oy = old_targets[old_id]['y']
                     dist = math.hypot(new_c['x'] - ox, new_c['y'] - oy)
@@ -252,6 +277,16 @@ class FusionEngine:
                             best_dist = dist
                             best_id = old_id
                             is_resurrected = True
+            if best_id is None:
+                best_dist = float('inf')
+                for old_id in available_old:
+                    if not old_targets[old_id].get('hibernating', False) and not old_targets[old_id].get('is_verified', False):
+                        ox = old_targets[old_id]['x']
+                        oy = old_targets[old_id]['y']
+                        dist = math.hypot(new_c['x'] - ox, new_c['y'] - oy)
+                        if dist < best_dist and dist < max_jump_dist:
+                            best_dist = dist
+                            best_id = old_id
             if best_id is not None:
                 available_old.remove(best_id)
                 old_x = old_targets[best_id]['x']
@@ -320,6 +355,14 @@ class FusionEngine:
                         "count": new_c['count'], 
                         "sources": new_c['sources']
                     })
+            else:
+                results.append({
+                    "id": target_id,
+                    "x": round(smoothed_x, 2), 
+                    "y": round(smoothed_y, 2),
+                    "count": new_c['count'], 
+                    "sources": ["unverified"]
+                })
             new_history[target_id] = {
                 'x': smoothed_x, 'y': smoothed_y,
                 'is_verified': is_verified,
@@ -328,13 +371,45 @@ class FusionEngine:
                 'last_seen': current_time,
                 'hibernating': False
             }
+        active_verified_points = [
+            (t['x'], t['y']) for t in new_history.values() 
+            if t.get('is_verified', False) and not t.get('hibernating', False)
+        ]
         for old_id in available_old:
             old_t = dict(old_targets[old_id]) 
             lifespan = current_time - old_t.get('spawn_time', current_time)
             if old_t.get('is_verified', False) and lifespan >= verify_delay:
-                if (current_time - old_t.get('last_seen', current_time)) < hibernation_ttl_sec:
+                in_stationary = False
+                specific_hold_sec = stationary_max_hold_sec
+                if stationary_zones:
+                    for zone in stationary_zones:
+                        poly = zone.get("points", [])
+                        if poly and len(poly) >= 3 and self._point_in_polygon(old_t['x'], old_t['y'], poly):
+                            in_stationary = True
+                            if zone.get("delay") is not None and float(zone.get("delay")) > 0:
+                                specific_hold_sec = float(zone.get("delay"))
+                            break
+                in_exclude = False
+                if exclude_zones:
+                    for zone in exclude_zones:
+                        poly = zone.get("points", [])
+                        if poly and len(poly) >= 3 and self._point_in_polygon(old_t['x'], old_t['y'], poly):
+                            in_exclude = True
+                            break
+                time_since_last_seen = current_time - old_t.get('last_seen', current_time)
+                is_redundant = False
+                for ax, ay in active_verified_points:
+                    if math.hypot(old_t['x'] - ax, old_t['y'] - ay) < resurrect_radius:
+                        is_redundant = True
+                        break
+                if in_stationary and not in_exclude and time_since_last_seen < specific_hold_sec and not is_redundant:
+                    old_t['hibernating'] = False
+                    new_history[old_id] = old_t
+                    results.append({"id": old_id, "x": round(old_t['x'], 2), "y": round(old_t['y'], 2), "count": 1, "sources": ["hold"]})
+                elif time_since_last_seen < hibernation_ttl_sec and not is_redundant:
                     old_t['hibernating'] = True
                     new_history[old_id] = old_t
+                    results.append({"id": old_id, "x": round(old_t['x'], 2), "y": round(old_t['y'], 2), "count": 0, "sources": ["hibernating"]})
             else:
                 if (current_time - old_t.get('last_seen', current_time)) <= 1.0:
                     new_history[old_id] = old_t
@@ -344,11 +419,12 @@ class FusionEngine:
         if not self.hass: return
         safe_map = map_id.lower().replace(" ", "_")
         entity_id = f"sensor.rmm_{safe_map}_master"
+        active_count = sum(1 for t in targets if not (t.get("sources", []) and ("hibernating" in t["sources"] or "unverified" in t["sources"])))
         attrs = {
-            "map_group": map_id, "count": len(targets),
+            "map_group": map_id, "count": active_count,
             "friendly_name": f"RMM {map_id} Master", "icon": "mdi:radar"
         }
-        self.hass.states.async_set(entity_id, str(len(targets)), attrs)
+        self.hass.states.async_set(entity_id, str(active_count), attrs)
     def _point_in_polygon(self, x, y, poly):
         n = len(poly)
         inside = False

@@ -113,6 +113,9 @@ class RadarZoneSensor(CoordinatorEntity, BinarySensorEntity):
         fused_targets = target_map_data.get('targets', []) if target_map_data else []
         is_triggered = False
         for t in fused_targets:
+            sources = t.get("sources", [])
+            if sources and ("hibernating" in sources or "unverified" in sources):
+                continue
             tx, ty = 0.0, 0.0
             if isinstance(t, dict):
                 tx = float(t.get('x', 0))
