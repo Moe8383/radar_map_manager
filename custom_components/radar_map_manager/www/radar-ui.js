@@ -357,7 +357,7 @@ export class RadarUI {
                         <div class="actions">
                             <button id="btn-backup" style="background:#1976D2; color:white;">Backup</button>
                             <button id="btn-restore" style="background:#F57F17; color:black;">Restore</button>
-                            <button id="btn-reset" style="background:#D32F2F; color:white;" title="Clear Tracking History">Reset</button>
+                            <button id="btn-reset" style="background:#7B1FA2; color:white;" title="Clear Tracking History">Clear Tracks</button>
                         </div>
                         <input type="file" id="file-upload" accept=".json" style="display:none">
                     </div>
