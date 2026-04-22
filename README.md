@@ -10,7 +10,7 @@
 
 It is not just a floor plan card, but a **spatial perception engine**. RMM maps data from multiple scattered millimeter-wave radars in your home onto one or more floor plans, enabling whole-house human tracking, trajectory visualization, and precise coordinate-based automation.
 
-> 🚀 **V1.1 Officially Released!** Massive performance and security upgrades! Introducing the **10Hz In-Memory WebSocket Bus** for zero database bloat, **ECDSA Zero-Trust Security**, and **Hardware-Level Zone** synchronization.
+> 🚀 V1.2 Major Upgrade! Bringing epic evolutions in performance and security! Introducing the new 10Hz In-Memory Streaming Bus (Zero I/O) to completely eliminate database bloat; adding a Zero-Trust Security Architecture; supporting Hardware-Level Polygon Zone synchronization for RMM Exclusive Radars (upcoming); and adding Entrance Zones and Stationary Hold Zones as multiple fail-safes to prevent false triggers and disappearing stationary targets.
 
 ---
 
@@ -29,12 +29,20 @@ Ditch the tedious YAML coordinate calculations! RMM provides an interactive fron
 RMM's target fusion engine unifies target points from multiple radars into a single coordinate system:
 * **Auto-Clustering**: Merges data when multiple radars detect the same person to prevent "ghost targets." Supports custom fusion ranges.
 * **Blind Spot Compensation**: Eliminates detection dead zones in rooms by overlapping multiple radars.
+* **Trajectory Smoothing**: Built-in 10-level target trajectory smoothing to eliminate stuttering and jumping.
 
 ### 3. 🛡️ Flexible Zone Management
 Supports arbitrary polygons with flexible editing, making zone management easy:
 * **Radar Monitor Zones**: Set individual monitor zones for each radar. Targets are only fused and displayed if they enter this zone; otherwise, global fusion is used by default.
 * **Global Detect Zones**: **Automation Powerhouse!** Freely set detection zones on the floor plan. When a fused target enters these zones, HA entities (automatically generated) are triggered. You can also customize trigger delays to avoid false alarms.
 * **Global Exclude Zones**: **The False Alarm Killer!** Draw zones around fans, curtains, or plants. The engine automatically filters out all interference signals within these areas.
+* **Entrance Zones**: **Green Channel & Double Insurance against False Alarms!** Any new target spawned within this zone is unconditionally trusted and verified instantly, bypassing the verify delay to achieve zero-latency "occupied" reporting.
+  * *Tip: It is highly recommended to draw this zone at the actual door frames of your room.*
+* **Stationary Hold Zones**: **The Ultimate Defense against "Lights Out While Occupied".** Designed for scenarios with extreme stillness like deep sleep, reading, or using the bathroom. If the radar temporarily loses your signal within this zone, the system locks a "Stationary Anchor" in place, continuing to report "occupied" until the countdown finishes.
+* **Independent Delay (`Dly`)**: Customize the tolerance time (in seconds) for each piece of furniture. Simply enter the seconds in the top `Dly` input when drawing (leave blank or set to 0 to fall back to the global `S_Hold` time).
+  * *Bed (Deep Sleep)*: Set to `3600` (1 hour). Sleep soundly till morning even if motionless under thick blankets.
+  * *Sofa (Focused Viewing)*: Set to `600` (10 mins). Perfectly balances an immersive experience with energy-saving auto-off when you leave.
+  * *Toilet/Bathtub (Bathroom)*: Set to `300` (5 mins). Say goodbye to the awkward hand-waving needed to keep the lights on.
 * **Hardware-Level Zones (`Hardware Zones`)**: (Exclusive for RMM Exclusive Radars, upcoming) Draw polygons on the HA map and sync them directly to the radar's hardware for native signal filtering! This perfectly complements global zones.
 * **Automation Entities**: Each Global Detect Zone automatically generates a **Presence entity (`binary_sensor`)** and a **Count entity (`sensor`)**, letting you easily implement automations. Easily implement automations like "Person on sofa automatically turns on TV" or "Person enters bathroom area automatically adjusts lights."
 
@@ -80,9 +88,6 @@ recorder:
       - sensor.rmm_*_master  # Excludes high-frequency coordinate attributes
 ```
 
-**For V1.1.x Users: No configuration needed**
-If you have upgraded to **RMM V1.1.x**, you do not need to add the above configuration. V1.1 has completely optimized the underlying data flow; all high-frequency coordinate data is transmitted via an in-memory channel and is no longer written to the Home Assistant database.
-
 ---
 
 ## 📦 Installation
@@ -120,7 +125,6 @@ map_group: default                   # Optional, floor plan/map group name, defa
 read_only: false                     # Optional, true for view mode, false for edit mode, default: false
 bg_image: /local/floorplan/house.png # Required in edit mode, path to floor plan image
 target_radius: 5                     # Optional, size of the fused target dot
-show_labels: true                    # Optional, show zone names
 handle_radius: 1.5                   # Optional, size of edit handles
 handle_stroke: 0.2                   # Optional, border size of active handles
 zone_stroke: 0.5                     # Optional, zone line width
@@ -229,25 +233,50 @@ Click `Zones` in the panel to enter global zone management. Note: Zones here are
 
 * Editing operations are the same as Monitor zones.
 
-* Fused targets falling into this zone will not be displayed or triggered. Use this to mask interference from fans, air conditioners, etc.
+* Purpose: Fused targets falling into this zone will not be displayed or triggered. Use this to mask interference from fans, air conditioners, etc.
+
+#### 3. Entrance Zones
+
+![ZONE](images/zones_entrance.png)
+
+* Editing operations are the same as Monitor zones.
+
+* Purpose: Fused targets falling into this zone are immediately granted "Verified" status, bypassing the `verify` delay.
+
+#### 4. Stationary Hold
+
+![ZONE](images/zones_stationary.png)
+
+* Editing operations are the same as Monitor zones.
+
+* Individual occupancy tolerance duration can be defined via the `Dly` setting (unit: seconds). Leave blank or set to 0 to use the global `S_Hold` time by default.
+
+* Purpose: When a radar temporarily loses a signal within this zone due to absolute target stillness, the system locks a "Stationary Anchor" in place, continuing to report "occupied" to the smart home until the countdown expires.
 
 ### C. ⚙️ Settings (Set)
 
 Click `Set` in the panel for global parameters.
 
-![SET](images/set_1.png)
+![SET](gif/set_panel.gif)
 
-* `Update`: Radar target refresh interval.
-
-* `Merge`: Radar target fusion distance. Targets from different radars within this distance will be merged.
-
-* `Tgt_H`: Target centroid height, used for 3D correction.
+* `Interval`: Backend polling and calculation refresh interval (in seconds).
+* `Merge`: Radar target fusion distance (in meters). Targets from different radars within this distance will be merged into one.
 
 * `Color`: Custom color for fused targets.
+* `Tgt_H`: Target centroid height, used for 3D correction.
 
-* `Backup`: Backup current configuration and export to a file.
-
-* `Restore`: Import a file to restore configuration.
+* `Track`: When enabled, activates the advanced anti-ghosting and kinematic tracking engine; when disabled, it falls back to a simple stateless passthrough mode.
+* `Labels`: When enabled, displays tracking IDs (1, 2, 3...) directly on the solid target dots on the map.
+* `Smooth`: Smoothness level of the target movement trajectory (Levels 1-10).
+* `Verify` (Verification Delay & Rules): Dual-track verification engine.
+  * **Checked (Standard Mode)**: Allows targets to spawn anywhere in the room, but they must pass the set observation period (seconds) to become verified, effectively filtering out random noise.
+  * **Unchecked (Strict Entrance Mode)**: Enables an absolute veto! Only targets entering through the "Entrance Zone" are valid. The underlying engine silently purges interference from flying bugs or fans appearing out of nowhere.
+* `Hbm_TTL` (Hibernation Time-To-Live): The duration (in hours) the system retains a "spatial snapshot" after a target temporarily disappears. Reappearing nearby instantly reactivates it with the original ID, ensuring tracking continuity. Recommended default: 12h.
+* `S_Hold` (Global Stationary Hold): The default tolerance hold time (in seconds) for global stationary zones.
+* `J_Base` (Base Spatial Tolerance): The physical limit (in meters) the system can tolerate for target point cloud jitter when stationary. Recommended range: 0.8 - 1.5 m.
+* `J_Speed` (Max Movement Speed): Sets the fastest possible human movement speed indoors (in meters/second), forming an impenetrable "dynamic anti-teleportation barrier." Recommended range: 2 - 3 m/s.
+* `Backup` / `Restore`: Export or import JSON configuration files for easy backup and migration.
+* `Clear Tracks`: Clears the tracking history and target IDs on the current map.
 
 ![SET](gif/set_color.gif)
 
