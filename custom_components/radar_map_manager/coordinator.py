@@ -30,6 +30,7 @@ class RadarCoordinator:
                         "enable_verify_rule": True,
                         "enable_tracking": True,
                         "show_labels": False,
+                        "show_trails": True,
                         "max_jump_base": 1.0,
                         "max_jump_speed": 2.5,
                         "stationary_max_hold": 300.0

@@ -78,6 +78,7 @@ UPDATE_MAP_CONFIG_SCHEMA = vol.Schema({
     vol.Optional("enable_verify_rule"): vol.Coerce(bool),
     vol.Optional("enable_tracking"): vol.Coerce(bool),
     vol.Optional("show_labels"): vol.Coerce(bool),
+    vol.Optional("show_trails"): vol.Coerce(bool),
     vol.Optional("max_jump_base"): vol.Coerce(float),
     vol.Optional("max_jump_speed"): vol.Coerce(float),
     vol.Optional("stationary_max_hold"): vol.Coerce(float),

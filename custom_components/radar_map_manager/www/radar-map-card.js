@@ -1,7 +1,7 @@
-import { RadarMath } from './radar-math.js?v=1.0.0';
-import { RadarUI } from './radar-ui.js?v=1.0.0';
-import { RadarRenderer } from './radar-renderer.js?v=1.0.0'; 
-import { RadarEditor } from './radar-editor.js?v=1.0.0';
+import { RadarMath } from './radar-math.js?v=1.1.3';
+import { RadarUI } from './radar-ui.js?v=1.1.3';
+import { RadarRenderer } from './radar-renderer.js?v=1.1.3'; 
+import { RadarEditor } from './radar-editor.js?v=1.1.3';
 const CARD_I18N = {
     "proxy_ok": { "zh": "[RMM VIP] 雷达 {0} 代理认证成功！专属高频点云已通过 HA 隧道激活。", "en": "[RMM VIP] Radar {0} proxy auth successful! Exclusive high-frequency point cloud activated via HA tunnel." },
     "proxy_fail": { "zh": "[RMM VIP] 代理中继连接失败 ({0})，已静默降级为 MQTT 模式。", "en": "[RMM VIP] Proxy relay connection failed ({0}), silently downgraded to MQTT mode." }

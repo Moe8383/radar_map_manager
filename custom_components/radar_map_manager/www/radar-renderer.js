@@ -349,6 +349,7 @@ export class RadarRenderer {
         const fusedColor = config.fused_color || globalConfig.fused_color || '#FFD700';
         const isTracking = globalConfig.enable_tracking !== false;
         const showLabels = (globalConfig.show_labels !== undefined ? globalConfig.show_labels : config.show_labels) === true && isTracking;
+        const showTrails = (globalConfig.show_trails !== undefined ? globalConfig.show_trails : (config.show_trails !== false)) !== false && isTracking;
         const transitionStyle = isTracking ? 'left 0.15s linear, top 0.15s linear, opacity 0.3s, border 0.3s' : 'opacity 0.3s, border 0.3s';
         const globalZones = (state.data && state.data.global_zones) || {};
         const excludeZones = globalZones.exclude_zones || [];
@@ -399,6 +400,29 @@ export class RadarRenderer {
                         dot.style.background = fusedColor;
                         dot.style.boxShadow = `0 0 8px ${fusedColor}`;
                     }
+                    if (isTracking && !isHibernating && !isHold && showTrails) {
+                        const lastTx = parseFloat(dot.dataset.lastTx || '-999');
+                        const lastTy = parseFloat(dot.dataset.lastTy || '-999');
+                        if (lastTx !== -999 && lastTy !== -999) { 
+                        const dist = Math.hypot(t.x - lastTx, t.y - lastTy);
+                        if (dist > 0.2) {
+                            const trail = document.createElement('div');
+                            trail.className = 'trail-dot';
+                            trail.style.width = `${targetRadius * 2}px`; 
+                            trail.style.height = `${targetRadius * 2}px`;
+                            trail.style.left = lastTx + '%'; 
+                            trail.style.top = lastTy + '%';
+                            trail.style.background = fusedColor;
+                            layer.insertBefore(trail, dot);
+                            void trail.offsetWidth;
+                            trail.style.opacity = '0';
+                            trail.style.transform = 'translate(-50%, -50%) scale(0.3)'; 
+                            setTimeout(() => { if (trail.parentNode) trail.parentNode.removeChild(trail); }, 1500);
+                        }
+                        }
+                        dot.dataset.lastTx = t.x;
+                        dot.dataset.lastTy = t.y;
+                    }
                     dot.style.left = t.x + '%'; 
                     dot.style.top = t.y + '%'; 
                     dot.innerText = showLabels ? (t.id ? t.id.replace('target_', '') : '') : '';
@@ -421,7 +445,8 @@ export class RadarRenderer {
                 });
             }
         Array.from(layer.children).forEach(child => {
-            if (!currentActiveIds.has(child.id)) {
+            if (child.className === 'trail-dot') return;
+            if (child.id && !currentActiveIds.has(child.id)) {
                 layer.removeChild(child);
             }
         });

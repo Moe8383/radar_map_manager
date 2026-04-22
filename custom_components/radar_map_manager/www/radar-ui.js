@@ -145,6 +145,7 @@ export class RadarUI {
             #btn-toggle-mode.active { background: #b71c1c; color: white; border-color: #ff5252; }
             .separator { height: 1px; background: #333; margin: 4px 0; }
             .dot { position: absolute; transform: translate(-50%, -50%); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: bold; color: white; text-shadow: 0 0 2px black; box-shadow: 0 0 3px white; pointer-events: none; }
+            .trail-dot { position: absolute; transform: translate(-50%, -50%) scale(1); border-radius: 50%; pointer-events: none; opacity: 0.6; transition: opacity 1.5s ease-in, transform 1.5s linear; z-index: 1; }
             .base-shadow { position: absolute; transform: translate(-50%, -50%); border-radius: 50%; background: rgba(0,0,0,0.5); filter: blur(1px); pointer-events: none; }
             .zone-label { font-size: 3.5px; fill: white; text-anchor: middle; pointer-events: none; text-shadow: 1px 1px 2px black; }
         `;
@@ -293,7 +294,9 @@ export class RadarUI {
                         <div class="row" id="row-labels" style="border-bottom: 1px solid #333; padding-bottom: 4px; margin-bottom: 4px;">
                             <label style="width:40px; text-align:right; color:#1976D2; font-weight:bold; margin-right:1px;">Labels</label>
                             <input type="checkbox" id="chk-show-labels" style="margin:0 2px 0 0; width:13px; height:13px; cursor:pointer;" title="Show Target IDs">
-                            <span style="font-size:9px; color:#888; flex:1; margin-left:2px;">Display Target ID Numbers</span>
+                            <label style="width:35px; text-align:right; color:#1976D2; font-weight:bold; margin-right:1px;">Trails</label>
+                            <input type="checkbox" id="chk-show-trails" style="margin:0 2px 0 0; width:13px; height:13px; cursor:pointer;" title="Show Movement Trails">
+                            <span style="font-size:9px; color:#888; flex:1; margin-left:2px;">IDs & Trails</span>
                         </div>
                         <div class="row" id="row-ema">
                             <label style="width:40px">Smooth</label>
@@ -657,6 +660,16 @@ export class RadarUI {
             chkLabels.onchange = (e) => {
                 if(state.hass) {
                     state.hass.callService('radar_map_manager', 'update_map_config', { map_group: state.mapGroup || "default", show_labels: e.target.checked });
+                }
+            };
+        }
+        const chkTrails = this.root.getElementById('chk-show-trails');
+        if (chkTrails) {
+            let isShowTrails = (conf.show_trails !== undefined) ? conf.show_trails : true;
+            if (this.root.activeElement !== chkTrails) chkTrails.checked = isShowTrails;
+            chkTrails.onchange = (e) => {
+                if(state.hass) {
+                    state.hass.callService('radar_map_manager', 'update_map_config', { map_group: state.mapGroup || "default", show_trails: e.target.checked });
                 }
             };
         }
