@@ -114,8 +114,27 @@ export class RadarRenderer {
         radarList.forEach(rObj => {
             const rName = rObj.name;
             const isCurrent = (rName === currentRadar);
-            const opacity = isCurrent ? (state.fov_edit_mode ? 0.2 : 1.0) : 0.4;
-            const strokeColor = isCurrent ? '#FFD700' : '#666';
+            let isOffline = false;
+            if (hass) {
+                const lowerRName = rName.toLowerCase();
+                const verEnt = hass.states[`sensor.${lowerRName}_version`];
+                const btnEnt = hass.states[`button.${lowerRName}_restart_radar`];
+                if ((verEnt && verEnt.state === 'unavailable') || (btnEnt && btnEnt.state === 'unavailable')) {
+                    isOffline = true;
+                }
+            }
+            let opacity = 0.4;
+            let strokeColor = '#666';
+            if (isCurrent) {
+                strokeColor = '#FFD700'; 
+                opacity = state.fov_edit_mode ? 0.2 : 1.0;
+            } else if (isOffline) {
+                strokeColor = '#dc3545'; 
+                opacity = 0.6;
+            } else {
+                strokeColor = '#03A9F4'; 
+                opacity = 0.7;
+            }
             const ptrEvents = state.fov_edit_mode ? 'none' : 'all'; 
             const cfg = this.getRadarConfig(state, rName, hass);
             const ox = cfg.origin_x; 
@@ -157,8 +176,8 @@ export class RadarRenderer {
                 group.appendChild(this._create('line', { x1: 0, y1: oy, x2: 100, y2: oy }, { stroke: 'rgba(255, 255, 0, 0.3)', strokeWidth: '0.2', pointerEvents: 'none' }));
                 group.appendChild(this._create('line', { x1: ox, y1: 0, x2: ox, y2: 100 }, { stroke: 'rgba(255, 255, 0, 0.3)', strokeWidth: '0.2', pointerEvents: 'none' }));
             } else {
-                const name = this._create('text', { x: ox, y: oy + 3 }, { fontSize: `${avatarFontSize * 0.8}px`, fill: '#ccc', textAnchor: 'middle', pointerEvents: 'none', textShadow: '1px 1px 1px black' });
-                name.textContent = rName;
+                const name = this._create('text', { x: ox, y: oy + 3 }, { fontSize: `${avatarFontSize * 0.8}px`, fill: strokeColor, textAnchor: 'middle', pointerEvents: 'none', textShadow: '1px 1px 1px black', fontWeight: 'bold' });
+                name.textContent = isOffline ? `${rName} (Off)` : rName;
                 group.appendChild(name);
             }
             svg.appendChild(group);
@@ -210,35 +229,43 @@ export class RadarRenderer {
             const color = dynamicColor || 'white';
             let strokeColor = color; let strokeWidth = zoneStroke; let fillOpacity = 0.2; let ptrEvents = 'all'; let strokeOpacity = 1.0; 
             let cursorStyle = 'pointer';
+            let showThisLabel = false; 
             if (isLayout) {
                 if (typeKey !== 'monitor_zones' && typeKey !== 'hardware_zones') return null; 
                 if (rName === state.radar) {
                     if (!state.fov_edit_mode) { 
                         ptrEvents = 'none'; fillOpacity = 0.2; strokeWidth = zoneStroke * 0.8; cursorStyle = 'default'; 
+                        showThisLabel = true; 
                     } else { 
                         if (typeKey === activeRadarType) {
                             ptrEvents = 'all'; fillOpacity = 0.4; strokeColor = color; 
+                            showThisLabel = true; 
                         } else {
                             ptrEvents = 'none'; fillOpacity = 0.1; strokeColor = color; strokeOpacity = 0.2;
+                            strokeWidth = zoneStroke * 0.3;
+                            showThisLabel = false;
                         }
                     }
                     if (isSelZone) { strokeColor = color; strokeWidth = zoneStroke * 2; fillOpacity = 0.6; }
                 } else {
-                    ptrEvents = 'none'; fillOpacity = 0.05; strokeOpacity = 0.2; strokeWidth = zoneStroke * 0.5; 
+                    ptrEvents = 'none'; fillOpacity = 0.05; strokeOpacity = 0.2; strokeWidth = zoneStroke * 0.3; 
+                    showThisLabel = false;
                 }
             } else {
                 if (typeKey === 'monitor_zones' || typeKey === 'hardware_zones') return null; 
                 if (typeKey === state.type) {
                     fillOpacity = 0.3; ptrEvents = 'all'; 
+                    showThisLabel = true; 
                     if (isSelZone) { strokeColor = color; strokeWidth = zoneStroke * 2; fillOpacity = 0.5; }
                 } else {
-                    fillOpacity = 0.05; strokeColor = '#555'; ptrEvents = 'none';
+                    fillOpacity = 0.05; strokeColor = '#555'; ptrEvents = 'none'; strokeWidth = zoneStroke * 0.3;
+                    showThisLabel = false;
                 }
             }
             group.appendChild(this._create('polygon', { 
                 points: ptsStr, class: 'zone-poly', 'data-type': typeKey, 'data-index': pIdx, 'data-radar': rName || ''
             }, { fill: color, fillOpacity: fillOpacity, stroke: strokeColor, strokeWidth: strokeWidth, strokeOpacity: strokeOpacity, pointerEvents: ptrEvents, cursor: cursorStyle }));
-            if (showLabels && obj.name && (isSelZone || state.fov_edit_mode || !isLayout)) {
+            if (showLabels && obj.name && showThisLabel) { 
                 const center = this.math.getCentroid(pts);
                 const txt = this._create('text', { x: center[0], y: center[1], class: 'zone-label' }, { fontSize: `${labelSize}px`, fill: 'white', textAnchor: 'middle', pointerEvents: 'none', textShadow: '1px 1px 2px black', opacity: 1 });
                 txt.textContent = obj.name;
