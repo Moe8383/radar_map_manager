@@ -291,25 +291,45 @@ class FusionEngine:
                 available_old.remove(best_id)
                 old_x = old_targets[best_id]['x']
                 old_y = old_targets[best_id]['y']
-                still_threshold = 0.2 * map_scale 
-                walk_threshold  = 1.0 * map_scale 
-                jump_threshold  = 1.5 * map_scale
-                if best_dist < still_threshold: current_alpha = base_alpha * 0.5
-                elif best_dist < walk_threshold: current_alpha = base_alpha
-                elif best_dist > jump_threshold: current_alpha = 1.0
-                else:
-                    ratio = (best_dist - walk_threshold) / (jump_threshold - walk_threshold)
-                    current_alpha = base_alpha + (1.0 - base_alpha) * ratio
-                smoothed_x = current_alpha * new_c['x'] + (1 - current_alpha) * old_x
-                smoothed_y = current_alpha * new_c['y'] + (1 - current_alpha) * old_y
                 target_id = best_id
                 spawn_time = old_targets[best_id].get('spawn_time', current_time)
                 is_verified = old_targets[best_id].get('is_verified', False)
                 is_valid_birth = old_targets[best_id].get('is_valid_birth', True)
+                if not is_verified:
+                    current_alpha = 1.0
+                else:
+                    still_threshold = 0.2 * map_scale 
+                    walk_threshold  = 1.0 * map_scale 
+                    jump_threshold  = 1.5 * map_scale
+                    if best_dist < still_threshold: current_alpha = base_alpha * 0.5
+                    elif best_dist < walk_threshold: current_alpha = base_alpha
+                    elif best_dist > jump_threshold: current_alpha = 1.0
+                    else:
+                        ratio = (best_dist - walk_threshold) / (jump_threshold - walk_threshold)
+                        current_alpha = base_alpha + (1.0 - base_alpha) * ratio
+                smoothed_x = current_alpha * new_c['x'] + (1 - current_alpha) * old_x
+                smoothed_y = current_alpha * new_c['y'] + (1 - current_alpha) * old_y
                 if is_resurrected:
                     is_verified = True
-                elif not is_verified and is_valid_birth and (current_time - spawn_time) >= verify_delay:
-                    is_verified = True 
+                elif not is_verified:
+                    if entrance_zones:
+                        for zone in entrance_zones:
+                            poly = zone.get("points", [])
+                            if poly and len(poly) >= 3:
+                                if self._point_in_polygon(smoothed_x, smoothed_y, poly):
+                                    is_valid_birth = True
+                                    is_verified = True
+                                    break
+                    if exclude_zones and is_verified:
+                        for zone in exclude_zones:
+                            poly = zone.get("points", [])
+                            if poly and len(poly) >= 3:
+                                if self._point_in_polygon(smoothed_x, smoothed_y, poly):
+                                    is_valid_birth = False
+                                    is_verified = False
+                                    break
+                    if not is_verified and is_valid_birth and (current_time - spawn_time) >= verify_delay:
+                        is_verified = True 
             else:
                 smoothed_x = new_c['x']
                 smoothed_y = new_c['y']
