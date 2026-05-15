@@ -25,7 +25,20 @@ const EDITOR_I18N = {
     "discard": { "zh": "放弃更改？", "en": "Discard changes?" },
     "clear_all": { "zh": "清除所有区域？", "en": "Clear ALL zones?" },
     "sel_radar": { "zh": "请先选择一个雷达。", "en": "Please select a radar first." },
-    "no_t1": { "zh": "未在当前雷达上找到活跃的 Target 1。无法冻结校准。", "en": "No active Target 1 found on this radar. Cannot freeze." }
+    "no_t1": { "zh": "未在当前雷达上找到活跃的 Target 1。无法冻结校准。", "en": "No active Target 1 found on this radar. Cannot freeze." },
+    "confirm_pc": { "zh": "⚠️ 警告：开启点云数据会大幅增加雷达发热与 Wi-Fi 带宽，仅建议在绘制盲区/调试时短暂使用！\n\n确定要立即开启 3D 点云直连通道吗？", "en": "⚠️ WARNING: Point Cloud greatly increases heat and Wi-Fi load. Recommended for debug only!\n\nEnable 3D point cloud stream now?" },
+    "confirm_ld6002b_detect": { 
+        "zh": "⚠️提示：\nLD6002B 的【硬件检测区(蓝框)】仅能控制其物理 TX2 引脚的高低电平，并不会过滤串口输出的坐标数据！\n\n👉 如果您希望在 HA 界面和实体中过滤区域外的目标，请点击 [取消]，并使用【Monitor (软件监控区 - 黄框)】来代替。\n\n是否仍要强制保存此硬件检测区？", 
+        "en": "⚠️ Note:\nLD6002B's [HW Detect Zone (Blue)] ONLY controls its physical TX2 pin high/low level, and WILL NOT filter coordinate data via UART!\n\n👉 If you want to filter out targets outside the zone in HA, please click [Cancel] and use [Monitor Zone (Yellow)] instead.\n\nStill force save this Hardware Detect Zone?"
+    },
+    "hw_stay_unsupported": {
+        "zh": "⚠️ 硬件限制：当前雷达 ({0}) 不支持【驻留区 (HW Stay)】！\n\n💡 目前仅 LD6004 型号支持此区域。",
+        "en": "⚠️ Hardware Limit: Current radar ({0}) does not support [HW Stay Zone]!\n\n💡 Currently only the LD6004 model supports this zone."
+    },
+    "calib_prompt": {
+        "zh": "请输入这条线段的真实物理长度（米）：\n例如: 4.5",
+        "en": "Enter the real physical length of this line (Meters):\nFor example: 4.5"
+    }
 };
 export class RadarEditor {
     constructor(host, root, math, ui, renderer) {
@@ -142,9 +155,38 @@ export class RadarEditor {
             this.isAddingNew = false; 
             state.isAddingNew = false; 
             state.mousePos = null;
+            state.isCalibratingMap = null; 
         };
         bindClick('btn-toggle-mode', () => { exitAddMode(); if(callbacks.onToggleEditMode) callbacks.onToggleEditMode(); }); 
         bindClick('btn-close-panel', () => { exitAddMode(); if(callbacks.onToggleEditMode) callbacks.onToggleEditMode(); });
+        bindClick('btn-calib-map-x', () => {
+            if (state.isCalibratingMap === 'X') {
+                exitAddMode();
+                state.points = []; 
+            } else {
+                exitAddMode();
+                state.isCalibratingMap = 'X';
+                state.points = [];
+                state.isAddingNew = true;
+                this.isAddingNew = true;
+            }
+            this.ui.updateStatus(state, config);
+            this.renderer.draw(state, config, state.hass); 
+        });
+        bindClick('btn-calib-map-y', () => {
+            if (state.isCalibratingMap === 'Y') {
+                exitAddMode();
+                state.points = []; 
+            } else {
+                exitAddMode();
+                state.isCalibratingMap = 'Y';
+                state.points = [];
+                state.isAddingNew = true;
+                this.isAddingNew = true;
+            }
+            this.ui.updateStatus(state, config);
+            this.renderer.draw(state, config, state.hass); 
+        });
         bindClick('btn-min-panel', () => {
             if (panel) {
                 panel.classList.toggle('collapsed');
@@ -156,11 +198,22 @@ export class RadarEditor {
         bindClick('btn-mode-zone', () => { exitAddMode(); state.type = 'include_zones'; if(callbacks.onModeChange) callbacks.onModeChange('zone'); }); 
         bindClick('btn-mode-settings', () => { exitAddMode(); if(callbacks.onModeChange) callbacks.onModeChange('settings'); });
         bindClick('btn-edit-fov', () => { 
+            if (!state.fov_edit_mode && state.editMode === 'layout' && (state.radar_zone_type === 'hw_detect_zones' || state.radar_zone_type === 'hw_block_zones' || state.radar_zone_type === 'hw_stay_zones')) {
+                const radarData = state.data[state.radar] || {};
+                if (!radarData.capabilities) { alert(this.t("not_supported")); return; }
+                if (radarData.auth_passed === false) { alert(this.t("auth_fail_alert")); return; }
+                if (state.radar_zone_type === 'hw_stay_zones' && radarData.capabilities.model !== 'LD6004') {
+                    alert(this.t("hw_stay_unsupported", radarData.capabilities.model || 'Unknown'));
+                    return; 
+                }
+                if (radarData.capabilities.max_hw_zones === 0) { alert(this.t("hw_unsupported", radarData.capabilities.model || 'Unknown')); return; }
+            }
             if (state.fov_edit_mode) {
                 if (state.hasUnsavedChanges) {
                     const isZoneEdited = (state.selectedIndex !== null) || (state.points && state.points.length >= 3);
                     if (isZoneEdited) {
-                        if (callbacks.onSave) callbacks.onSave();
+                        const btnSave = this.root.getElementById('btn-save');
+                        if (btnSave) btnSave.click(); 
                     }
                     if (callbacks.onSaveLayout) callbacks.onSaveLayout();
                 }
@@ -175,28 +228,75 @@ export class RadarEditor {
         bindLayoutInput(this, 'layout-rot', 'rotation', callbacks); 
         bindLayoutInput(this, 'layout-sx', 'scale_x', callbacks); 
         bindLayoutInput(this, 'layout-sy', 'scale_y', callbacks);
-        bindLayoutInput(this, 'layout-h', 'mount_height', callbacks);
         bindLayoutInput(this, 'layout-ceiling', 'ceiling_mount', callbacks, true);
         bindLayoutInput(this, 'layout-mirror', 'mirror_x', callbacks, true); 
-        bindLayoutInput(this, 'layout-3d', 'enable_3d', callbacks, true); 
+        const selLayoutRadarType = this.root.getElementById('layout-radar-type');
+        if(selLayoutRadarType) selLayoutRadarType.onchange = (e) => { 
+            if(callbacks.onLayoutParamChange) callbacks.onLayoutParamChange('radar_type', parseInt(e.target.value)); 
+        };
+        const elH = this.root.getElementById('layout-h');
+        if (elH) {
+            elH.onchange = (e) => {
+                const val = parseFloat(e.target.value);
+                const hEntId = `number.${state.radar?.toLowerCase()}_radar_height`;
+                if (state.hass && state.hass.states[hEntId] && state.hass.states[hEntId].state !== 'unavailable') {
+                    state.hass.callService('number', 'set_value', { entity_id: hEntId, value: String(val) });
+                }
+                if (callbacks.onLayoutParamChange) callbacks.onLayoutParamChange('mount_height', val);
+            };
+        }
         bindStepper(this, 'btn-sx-minus', 'layout-sx', -0.1, callbacks, 'scale_x');
         bindStepper(this, 'btn-sx-plus', 'layout-sx', 0.1, callbacks, 'scale_x');
         bindStepper(this, 'btn-sy-minus', 'layout-sy', -0.1, callbacks, 'scale_y');
         bindStepper(this, 'btn-sy-plus', 'layout-sy', 0.1, callbacks, 'scale_y');
         bindClick('btn-calc-ax', () => {
             const elSy = this.root.getElementById('layout-sy');
-            if(elSy && state.aspectRatio) {
+            const elRot = this.root.getElementById('layout-rot');
+            if(elSy) {
                 const sy = parseFloat(elSy.value) || 5;
-                const sx = parseFloat((sy * state.aspectRatio).toFixed(2));
+                let sx = 5;
+                const rot = Math.abs(parseFloat(elRot?.value || 0)) % 180;
+                const isSwapped = (rot > 45 && rot < 135); 
+                const conf = (state.data && state.data.global_config) || {};
+                if (conf.map_scale_x && conf.map_scale_y) {
+                    if (isSwapped) {
+                        sx = parseFloat((sy * (conf.map_scale_y / conf.map_scale_x)).toFixed(2));
+                    } else {
+                        sx = parseFloat((sy * (conf.map_scale_x / conf.map_scale_y)).toFixed(2));
+                    }
+                } else if (state.aspectRatio) {
+                    if (isSwapped) {
+                        sx = parseFloat((sy * state.aspectRatio).toFixed(2)); 
+                    } else {
+                        sx = parseFloat((sy / state.aspectRatio).toFixed(2)); 
+                    }
+                }
                 const elSx = this.root.getElementById('layout-sx'); if(elSx) elSx.value = sx;
                 if(callbacks.onLayoutParamChange) callbacks.onLayoutParamChange('scale_x', sx);
             }
         });
         bindClick('btn-calc-ay', () => {
             const elSx = this.root.getElementById('layout-sx');
-            if(elSx && state.aspectRatio) {
+            const elRot = this.root.getElementById('layout-rot');
+            if(elSx) {
                 const sx = parseFloat(elSx.value) || 5;
-                const sy = parseFloat((sx / state.aspectRatio).toFixed(2));
+                let sy = 5;
+                const rot = Math.abs(parseFloat(elRot?.value || 0)) % 180;
+                const isSwapped = (rot > 45 && rot < 135);
+                const conf = (state.data && state.data.global_config) || {};
+                if (conf.map_scale_x && conf.map_scale_y) {
+                    if (isSwapped) {
+                        sy = parseFloat((sx * (conf.map_scale_x / conf.map_scale_y)).toFixed(2));
+                    } else {
+                        sy = parseFloat((sx * (conf.map_scale_y / conf.map_scale_x)).toFixed(2));
+                    }
+                } else if (state.aspectRatio) {
+                    if (isSwapped) {
+                        sy = parseFloat((sx / state.aspectRatio).toFixed(2));
+                    } else {
+                        sy = parseFloat((sx * state.aspectRatio).toFixed(2)); 
+                    }
+                }
                 const elSy = this.root.getElementById('layout-sy'); if(elSy) elSy.value = sy;
                 if(callbacks.onLayoutParamChange) callbacks.onLayoutParamChange('scale_y', sy);
             }
@@ -437,57 +537,158 @@ export class RadarEditor {
                 state.points = [];
                 if(callbacks.resetSelection) callbacks.resetSelection();
             } else if (state.hasUnsavedChanges) {
-                if(callbacks.onDiscard) callbacks.onDiscard();
+                if(confirm(this.t("discard"))) {
+                    if(callbacks.onDiscardConfig) callbacks.onDiscardConfig(); 
+                }
             } else {
                 if(callbacks.resetSelection) callbacks.resetSelection();
             }
         });
-        bindClick('btn-hw-mode', () => {
-            if (!state.radar) return;
-            let currentMode = 2;
-            if (state.layoutChanges && state.layoutChanges.hw_zone_mode !== undefined) {
-                currentMode = parseInt(state.layoutChanges.hw_zone_mode);
-            } else if (state.data[state.radar] && state.data[state.radar].layout && state.data[state.radar].layout.hw_zone_mode !== undefined) {
-                currentMode = parseInt(state.data[state.radar].layout.hw_zone_mode);
+        bindClick('btn-cancel-layout', () => { 
+            state.layoutChanges = {}; 
+            state.hasUnsavedChanges = false;
+            if (state.calibration && state.calibration.active) {
+                state.calibration = { active: false, raw: null, map: null };
             }
-            const newMode = (currentMode === 1) ? 2 : 1; 
-            if (callbacks.onLayoutParamChange) {
-                callbacks.onLayoutParamChange('hw_zone_mode', newMode);
-            }
+            this.ui.updateLayoutInputs(state, state.hass); 
+            this.renderer.draw(state, config, state.hass); 
             this.ui.updateStatus(state, config);
         });
         bindClick('btn-del-zone', () => {
             if (confirm(this.t("del_zone"))) {
-                if(callbacks.onDelZone) callbacks.onDelZone();
-                exitAddMode();
+                const list = getActiveList(state);
+                if (state.selectedIndex !== null && list[state.selectedIndex]) {
+                    list.splice(state.selectedIndex, 1); 
+                    exitAddMode();
+                    if(callbacks.resetSelection) callbacks.resetSelection();
+                    if(callbacks.onSaveZoneConfig) callbacks.onSaveZoneConfig(); 
+                }
             }
         });
         const btnUndo = this.root.getElementById('btn-undo');
-        if (btnUndo) {
-            btnUndo.onclick = () => {
-                if(callbacks.onUndo) callbacks.onUndo();
-                if (state.points.length === 0) exitAddMode();
-                this.ui.updateLayoutInputs(state, state.hass);
-            };
-        }
-        bindClick('btn-clear', () => { if(callbacks.onClear) callbacks.onClear(); exitAddMode(); }); 
+        bindClick('btn-undo', () => {
+            if (state.points.length > 0) state.points.pop();
+            else if(state.historyStack.length > 0) state.data = state.historyStack.pop();
+            if (state.points.length === 0) exitAddMode();
+            this.ui.updateLayoutInputs(state, state.hass);
+            this.renderer.draw(state, config, state.hass);
+            this.ui.updateStatus(state, config);
+        });
+        bindClick('btn-clear', () => { 
+            if(confirm(this.t("clear_all"))) { 
+                const list = getActiveList(state);
+                list.length = 0; 
+                exitAddMode();
+                if(callbacks.resetSelection) callbacks.resetSelection();
+                if(callbacks.onSaveZoneConfig) callbacks.onSaveZoneConfig(); 
+            } 
+        });
+        bindClick('btn-save-layout', callbacks.onSaveLayout); 
+        bindClick('btn-freeze', callbacks.onCalibrationToggle);
         const btnSave = this.root.getElementById('btn-save');
         if (btnSave) {
             btnSave.onclick = (e) => {
+                const list = getActiveList(state);
+                const isCreatingNew = (state.points.length >= 3);
                 if (state.points.length > 0 || (state.selectedIndex !== null && state.hasUnsavedChanges)) {
-                    if(callbacks.onSave) callbacks.onSave();
-                    exitAddMode(); 
-                } 
-                else {
-                    if (state.editMode === 'layout' && state.radar_zone_type === 'hardware_zones') {
+                    const elName = this.root.getElementById('in-name');
+                    const elDelay = this.root.getElementById('in-delay');
+                    let n = elName ? elName.value.trim() : ''; 
+                    const d = elDelay ? parseFloat(elDelay.value) : 0; 
+                    if (state.editMode === 'layout' && (state.radar_zone_type === 'hw_detect_zones' || state.radar_zone_type === 'hw_block_zones' || state.radar_zone_type === 'hw_stay_zones')) {
                         const radarData = state.data[state.radar] || {};
-                        if (radarData.auth_passed === false) {
-                            alert(this.t("auth_fail_alert"));
-                            return;
-                        }
                         const caps = radarData.capabilities || {};
                         const maxHwZones = caps.max_hw_zones !== undefined ? caps.max_hw_zones : 3; 
-                        const list = state.data[state.radar][state.radar_zone_type] || [];
+                        if (state.radar_zone_type === 'hw_stay_zones' && caps.model !== 'LD6004') {
+                             alert(this.t("hw_stay_unsupported", caps.model || 'Unknown'));
+                             state.points = []; state.isAddingNew = false;
+                             this.renderer.draw(state, config, state.hass);
+                             this.ui.updateStatus(state, config);
+                             return; 
+                        }
+                        if (caps.model === 'LD2450' || caps.model === 'LD2452') {
+                            let otherType = '';
+                            let otherZones = [];
+                            if (state.radar_zone_type === 'hw_detect_zones') {
+                                otherType = 'hw_block_zones';
+                                otherZones = radarData.hw_block_zones || [];
+                            } else if (state.radar_zone_type === 'hw_block_zones') {
+                                otherType = 'hw_detect_zones';
+                                otherZones = radarData.hw_detect_zones || [];
+                            }
+                            if (otherZones.length > 0) {
+                                const typeNames = { 'hw_detect_zones': '【硬件检测区(蓝)】', 'hw_block_zones': '【硬件屏蔽区(紫)】' };
+                                const curName = typeNames[state.radar_zone_type];
+                                const otherName = typeNames[otherType];
+                                const msg = `⚠️ 硬件限制：LD2450 无法同时开启 ${curName} 和 ${otherName}！\n\n是否将已有的 ${otherName} 全部转换为 ${curName}？\n\n👉 点击 [确定] 自动合并并保存\n👉 点击 [取消] 放弃保存`;
+                                if (window.confirm(msg)) {
+                                    let availableSlots = maxHwZones - list.length;
+                                    if (isCreatingNew) availableSlots -= 1; 
+                                    otherZones.forEach(z => {
+                                        if (availableSlots > 0) { list.push(z); availableSlots--; }
+                                    });
+                                    state.data[state.radar][otherType] = []; 
+                                } else {
+                                    state.points = []; state.isAddingNew = false;
+                                    this.renderer.draw(state, config, state.hass);
+                                    this.ui.updateStatus(state, config);
+                                    return; 
+                                }
+                            }
+                        }
+                        else if (caps.model === 'LD6002B') {
+                            if (state.radar_zone_type === 'hw_detect_zones' && isCreatingNew) {
+                                const msg = this.t("confirm_ld6002b_detect");
+                                if (!window.confirm(msg)) {
+                                    state.points = []; state.isAddingNew = false;
+                                    this.renderer.draw(state, config, state.hass);
+                                    this.ui.updateStatus(state, config);
+                                    return; 
+                                }
+                            }
+                        }
+                        if (maxHwZones === 0 || (isCreatingNew && list.length >= maxHwZones)) {
+                            alert(this.t("hw_limit", maxHwZones));
+                            state.points = []; state.isAddingNew = false;
+                            this.renderer.draw(state, config, state.hass);
+                            this.ui.updateStatus(state, config);
+                            return; 
+                        }
+                    }
+                    if (!n) {
+                        if (state.editMode === 'layout') {
+                            const isHWB = state.radar_zone_type === 'hw_block_zones';
+                            n = isHWB ? `HW Block ${list.length + 1}` : (state.radar_zone_type === 'hw_detect_zones' ? `HW Detect ${list.length + 1}` : (state.radar_zone_type === 'hw_stay_zones' ? `HW Stay ${list.length + 1}` : `Monitor ${list.length + 1}`));
+                        } else {
+                            n = `Zone ${list.length + 1}`;
+                        }
+                    }
+                    const normalize = (str) => (str || '').trim().toLowerCase().replace(/\s+/g, '_');
+                    const targetSlug = normalize(n);
+                    const isDuplicate = list.some((z, idx) => {
+                        if (state.selectedIndex !== null && idx === state.selectedIndex) return false;
+                        return normalize(z.name) === targetSlug;
+                    });
+                    if (isDuplicate) { alert(this.t("name_conflict", n)); return; }
+                    if (state.points.length >= 3) {
+                        list.push({ name: n, delay: d, points: [...state.points] });
+                        state.points = [];
+                        state.selectedIndex = list.length - 1;
+                    } else if (state.selectedIndex !== null && list[state.selectedIndex]) {
+                        list[state.selectedIndex].name = n;
+                        list[state.selectedIndex].delay = d;
+                    } else {
+                        alert(this.t("draw_3")); return;
+                    }
+                    exitAddMode();
+                    if(callbacks.onSaveZoneConfig) callbacks.onSaveZoneConfig(); 
+                } 
+                else {
+                    if (state.editMode === 'layout' && (state.radar_zone_type === 'hw_detect_zones' || state.radar_zone_type === 'hw_block_zones' || state.radar_zone_type === 'hw_stay_zones')) {
+                        const radarData = state.data[state.radar] || {};
+                        if (radarData.auth_passed === false) { alert(this.t("auth_fail_alert")); return; }
+                        const caps = radarData.capabilities || {};
+                        const maxHwZones = caps.max_hw_zones !== undefined ? caps.max_hw_zones : 3; 
                         if (list.length >= maxHwZones) {
                             alert(this.t("hw_limit", maxHwZones));
                             return; 
@@ -498,15 +699,12 @@ export class RadarEditor {
                     state.isAddingNew = true; 
                     const inName = this.root.getElementById('in-name');
                     if (inName) {
-                        const list = getActiveList(state) || [];
                         const nextIdx = list.length + 1; 
-                        if (state.editMode === 'layout' && state.radar_zone_type === 'hardware_zones') {
-                            inName.value = `HW ZONE ${nextIdx}`;
-                        } else if (state.editMode === 'layout') {
-                            inName.value = `Monitor ${nextIdx}`;
-                        } else {
-                            inName.value = `Zone ${nextIdx}`; 
-                        }
+                        if (state.editMode === 'layout' && state.radar_zone_type === 'hw_block_zones') { inName.value = `HW Block ${nextIdx}`; } 
+                        else if (state.editMode === 'layout' && state.radar_zone_type === 'hw_detect_zones') { inName.value = `HW Detect ${nextIdx}`; } 
+                        else if (state.editMode === 'layout' && state.radar_zone_type === 'hw_stay_zones') { inName.value = `HW Stay ${nextIdx}`; } 
+                        else if (state.editMode === 'layout') { inName.value = `Monitor ${nextIdx}`; } 
+                        else { inName.value = `Zone ${nextIdx}`; }
                     }
                     const rootEl = this.root.getElementById('root');
                     if (rootEl) {
@@ -624,7 +822,7 @@ export class RadarEditor {
         if (isDirty) {
             if (confirm(this.t("unsaved"))) {
                 if (saveAction === 'layout' && callbacks.onSaveLayout) callbacks.onSaveLayout();
-                else if(callbacks.onSave) callbacks.onSave(); 
+                else if(callbacks.onSaveZoneConfig) callbacks.onSaveZoneConfig(); 
                 setTimeout(onProceed, 200); 
             } else {
                 state.hasUnsavedChanges = false;
@@ -709,7 +907,7 @@ export class RadarEditor {
                 return;
             }
             let cursor = (this.isAddingNew || state.isAddingNew) ? "crosshair" : "default";
-            if (!this.isAddingNew && !state.isAddingNew) {
+            if (!this.isAddingNew && !state.isAddingNew && state.editMode !== 'settings') {
                 const activeList = getActiveList(state);
                 let hitPoint = false;
                 for(let i=0; i<activeList.length; i++) {
@@ -751,6 +949,71 @@ export class RadarEditor {
             const mx = parseFloat((((e.clientX - rect.left) / rect.width) * 100).toFixed(2)); 
             const my = parseFloat((((e.clientY - rect.top) / rect.height) * 100).toFixed(2));
             if (this.isAddingNew || state.isAddingNew) {
+                if (state.isCalibratingMap) {
+                    if (state.points.length === 0) {
+                        state.points.push([mx, my]);
+                    } else if (state.points.length === 1) {
+                        let p1 = state.points[0];
+                        let finalX = mx, finalY = my;
+                        if (state.isCalibratingMap === 'X') finalY = p1[1]; 
+                        if (state.isCalibratingMap === 'Y') finalX = p1[0]; 
+                        state.points.push([finalX, finalY]);
+                        this.renderer.draw(state, config, state.hass);
+                        const overlay = document.createElement('div');
+                        overlay.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;font-family:sans-serif;";
+                        overlay.innerHTML = `
+                            <div style="background:var(--card-background-color, #fff);color:var(--primary-text-color, #333);padding:24px;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,0.3);width:300px;text-align:center;">
+                                <h3 style="margin-top:0; color:var(--primary-color, #03a9f4); font-size:18px;">📐 Map Calibration</h3>
+                                <p style="font-size:14px; color:var(--secondary-text-color, #666); white-space:pre-wrap; margin-bottom:20px;">${this.t("calib_prompt")}</p>
+                                <input type="number" id="rmm-calib-len" step="0.1" placeholder="e.g. 4.5" style="width:100%; box-sizing:border-box; padding:12px; border:2px solid var(--primary-color, #03a9f4); border-radius:6px; font-size:16px; text-align:center; margin-bottom:20px; outline:none; background:var(--secondary-background-color, #fafafa); color:var(--primary-text-color, #333);">
+                                <div style="display:flex; gap:12px;">
+                                    <button id="rmm-btn-cancel" style="flex:1; padding:12px; border:none; background:var(--disabled-text-color, #ccc); color:#fff; border-radius:6px; font-weight:bold; cursor:pointer;">Cancel</button>
+                                    <button id="rmm-btn-ok" style="flex:1; padding:12px; border:none; background:var(--primary-color, #03a9f4); color:#fff; border-radius:6px; font-weight:bold; cursor:pointer;">Confirm</button>
+                                </div>
+                            </div>
+                        `;
+                        document.body.appendChild(overlay);
+                        const inp = overlay.querySelector('#rmm-calib-len');
+                        inp.focus();
+                        const cleanup = (valStr) => {
+                            overlay.remove(); 
+                            try {
+                                if (valStr !== null && valStr.trim() !== '') {
+                                    let len = parseFloat(valStr);
+                                    if (!isNaN(len) && len > 0) {
+                                        let diff = 0;
+                                        if (state.isCalibratingMap === 'X') diff = Math.abs(finalX - p1[0]);
+                                        if (state.isCalibratingMap === 'Y') diff = Math.abs(finalY - p1[1]);
+                                        if (diff > 0) {
+                                            let ratio = diff / len;
+                                            let fullData = JSON.parse(JSON.stringify(this.host.fullRawData || {}));
+                                            let mg = state.mapGroup || "default";
+                                            if (!fullData.maps) fullData.maps = {};
+                                            if (!fullData.maps[mg]) fullData.maps[mg] = {};
+                                            if (!fullData.maps[mg].config) fullData.maps[mg].config = {};
+                                            if (state.isCalibratingMap === 'X') fullData.maps[mg].config.map_scale_x = ratio;
+                                            if (state.isCalibratingMap === 'Y') fullData.maps[mg].config.map_scale_y = ratio;
+                                            state.hass.callService('radar_map_manager', 'import_config', { config_json: JSON.stringify(fullData) });
+                                        }
+                                    }
+                                }
+                            } catch (e) {
+                                console.error("RMM Calib Error:", e);
+                            } finally {
+                                state.isCalibratingMap = null; state.isAddingNew = false; this.isAddingNew = false;
+                                state.points = []; 
+                                this.renderer.draw(state, config, state.hass);
+                                this.ui.updateStatus(state, config);
+                            }
+                        };
+                        overlay.querySelector('#rmm-btn-cancel').onclick = () => cleanup(null);
+                        overlay.querySelector('#rmm-btn-ok').onclick = () => cleanup(inp.value);
+                        inp.onkeydown = (e) => { if (e.key === 'Enter') cleanup(inp.value); if (e.key === 'Escape') cleanup(null); };
+                    }
+                    this.renderer.draw(state, config, state.hass); 
+                    this.ui.updateStatus(state, config);
+                    return;
+                }
                 state.points.push([mx, my]);
                 this.renderer.draw(state, config, state.hass); 
                 this.ui.updateStatus(state, config);
@@ -767,6 +1030,7 @@ export class RadarEditor {
                 }
                 return;
             }
+            if (state.editMode === 'settings') return;
             if (state.editMode === 'layout' && !state.fov_edit_mode) {
                 if (state.radar) {
                     const cfg = this.renderer.getRadarConfig(state, state.radar, state.hass);

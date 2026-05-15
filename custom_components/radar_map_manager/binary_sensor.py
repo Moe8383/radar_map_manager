@@ -12,8 +12,11 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     if DOMAIN not in hass.data or "coordinator" not in hass.data[DOMAIN]: return
     coordinator = hass.data[DOMAIN]["coordinator"]
     manager = RadarBinarySensorManager(hass, coordinator, async_add_entities)
+    fall_manager = RadarFallSensorManager(hass, coordinator, async_add_entities)
     await manager.update_sensors()
+    await fall_manager.update_sensors()
     coordinator.async_add_listener(manager.update_sensors_callback)
+    coordinator.async_add_listener(fall_manager.update_sensors_callback)
 class RadarBinarySensorManager:
     def __init__(self, hass, coordinator, add_entities_callback):
         self.hass = hass
@@ -48,7 +51,7 @@ class RadarBinarySensorManager:
         entries_to_remove = []
         for entity_id, entry in ent_reg.entities.items():
             uid_str = str(entry.unique_id)
-            if entry.domain == "binary_sensor" and (entry.platform == DOMAIN or uid_str.startswith("rmm_")):
+            if entry.domain == "binary_sensor" and uid_str.startswith("rmm_") and uid_str.endswith("_occupancy"):
                 if uid_str not in desired_sensors:
                     entries_to_remove.append(entity_id)
         for entity_id in entries_to_remove:
@@ -164,5 +167,88 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     if DOMAIN not in hass.data or "coordinator" not in hass.data[DOMAIN]: return
     coordinator = hass.data[DOMAIN]["coordinator"]
     manager = RadarBinarySensorManager(hass, coordinator, async_add_entities)
+    fall_manager = RadarFallSensorManager(hass, coordinator, async_add_entities)
     await manager.update_sensors()
+    await fall_manager.update_sensors()
     coordinator.async_add_listener(manager.update_sensors_callback)
+    coordinator.async_add_listener(fall_manager.update_sensors_callback)
+class RadarFallSensorManager:
+    def __init__(self, hass, coordinator, add_entities_callback):
+        self.hass = hass
+        self.coordinator = coordinator
+        self.add_entities = add_entities_callback
+        self.sensors = {}
+    @callback
+    def update_sensors_callback(self):
+        self.hass.async_create_task(self.update_sensors())
+    async def update_sensors(self):
+        data = self.coordinator.data
+        if not data or 'maps' not in data:
+            return
+        desired_sensors = {}
+        for map_group, map_data in data['maps'].items():
+            group_slug = slugify(map_group)
+            uid = f"rmm_{group_slug}_fall_alert"
+            desired_sensors[uid] = {
+                'name': f"RMM {map_group} Fall Alert",
+                'map_group': map_group
+            }
+        ent_reg = er.async_get(self.hass)
+        current_uids = set(self.sensors.keys())
+        new_uids = set(desired_sensors.keys())
+        for uid in current_uids - new_uids:
+            sensor = self.sensors.pop(uid)
+            ent_reg.async_remove(sensor.entity_id)
+        to_add = []
+        for uid in new_uids - current_uids:
+            sensor = RadarFallSensor(self.coordinator, uid, desired_sensors[uid])
+            self.sensors[uid] = sensor
+            to_add.append(sensor)
+        if to_add:
+            self.add_entities(to_add)
+class RadarFallSensor(CoordinatorEntity, BinarySensorEntity):
+    def __init__(self, coordinator, unique_id, config):
+        super().__init__(coordinator)
+        self._unique_id = unique_id
+        self.config = config
+        self._is_on = False
+        self._attr_has_entity_name = False
+        self._attr_name = config['name']
+        self.entity_id = f"binary_sensor.{unique_id}"
+        self._attr_device_class = BinarySensorDeviceClass.PROBLEM
+        self._attr_icon = "mdi:human-fall"
+        self._map_group = config['map_group']
+        self._fallen_targets = []
+    @property
+    def unique_id(self):
+        return self._unique_id
+    @property
+    def is_on(self):
+        return self._is_on
+    @property
+    def extra_state_attributes(self):
+        return {
+            "map_group": self._map_group,
+            "fallen_targets": self._fallen_targets,
+            "last_detected": time.time() if self._is_on else None
+        }
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        data = self.coordinator.data or {}
+        maps_data = data.get('maps', {})
+        target_map_data = maps_data.get(self._map_group)
+        fused_targets = target_map_data.get('targets', []) if target_map_data else []
+        fallen_targets_info = []
+        is_fall_detected = False
+        for t in fused_targets:
+            if t.get("posture") == 'fallen':
+                is_fall_detected = True
+                fallen_targets_info.append({
+                    "id": t.get("id"),
+                    "height": t.get("abs_height"),
+                    "sources": t.get("sources")
+                })
+        self._fallen_targets = fallen_targets_info
+        if self._is_on != is_fall_detected:
+            self._is_on = is_fall_detected
+            self.async_write_ha_state()

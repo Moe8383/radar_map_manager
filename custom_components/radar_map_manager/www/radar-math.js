@@ -3,7 +3,8 @@ export class RadarMath {
     calculate(cfg, point) {
         let xVal = point.x;
         let yVal = point.y;
-        if (cfg.enable_correction && !cfg.ceiling_mount && yVal > 0) {
+        const rType = cfg.radar_type || 1;
+        if (cfg.enable_correction !== false && rType === 1 && !cfg.ceiling_mount && yVal > 0) {
             const radarH = parseFloat(cfg.mount_height) || 2.5;
             const targetH = parseFloat(cfg.target_height) || 1.2;
             const hDiff = Math.abs(radarH - targetH);

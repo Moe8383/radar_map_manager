@@ -141,40 +141,41 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             caps = r_conf.get("capabilities", {})
             max_zones = caps.get("max_hw_zones", 3)
             if max_zones == 0: continue 
-            hw_zones = r_conf.get("hardware_zones", [])
             layout = r_conf.get("layout", {})
-            hw_mode = int(layout.get("hw_zone_mode", 2))
-            if len(hw_zones) == 0:
-                hw_mode = 0 
             ox = float(layout.get('origin_x', 50)); oy = float(layout.get('origin_y', 50))
             sx = float(layout.get('scale_x', 5)); sy = float(layout.get('scale_y', 5))
             rot = float(layout.get('rotation', 0))
             base_rad = (rot - 90) * math.pi / 180.0
             y_vec_x = math.cos(base_rad); y_vec_y = math.sin(base_rad)
             x_vec_x = math.cos(base_rad + (math.pi / 2)); x_vec_y = math.sin(base_rad + (math.pi / 2))
-            payload_parts = [str(hw_mode)]
-            for i in range(max_zones):
-                if i < len(hw_zones) and len(hw_zones[i].get("points", [])) >= 3:
-                    x_vals, y_vals = [] , []
-                    for p in hw_zones[i]["points"]:
-                        dx = p[0] - ox; dy = p[1] - oy
-                        x_m = (dx * x_vec_x + dy * x_vec_y) / sx
-                        y_m = (dx * y_vec_x + dy * y_vec_y) / sy
-                        if layout.get('mirror_x', False): x_m = -x_m
-                        x_vals.append(x_m * 1000.0); y_vals.append(y_m * 1000.0)
-                    x_min, x_max = min(x_vals), max(x_vals)
-                    y_min, y_max = min(y_vals), max(y_vals)
-                    if x_min > x_max: x_min, x_max = x_max, x_min
-                    if y_min > y_max: y_min, y_max = y_max, y_min
-                    y_min = max(0, y_min)
-                    y_max = max(0, y_max)
-                    payload_parts.append(f"{int(x_min)},{int(x_max)},{int(y_min)},{int(y_max)}")
-                else:
-                    payload_parts.append("0,0,0,0")
-            payload = ",".join(payload_parts)
+            def extract_rects(zones):
+                res = []
+                for i in range(max_zones):
+                    if i < len(zones) and len(zones[i].get("points", [])) >= 3:
+                        x_vals, y_vals = [] , []
+                        for p in zones[i]["points"]:
+                            dx = p[0] - ox; dy = p[1] - oy
+                            x_m = (dx * x_vec_x + dy * x_vec_y) / sx
+                            y_m = (dx * y_vec_x + dy * y_vec_y) / sy
+                            if layout.get('mirror_x', False): x_m = -x_m
+                            x_vals.append(x_m * 1000.0); y_vals.append(y_m * 1000.0)
+                        x_min, x_max = min(x_vals), max(x_vals)
+                        y_min, y_max = min(y_vals), max(y_vals)
+                        if x_min > x_max: x_min, x_max = x_max, x_min
+                        if y_min > y_max: y_min, y_max = y_max, y_min
+                        y_min = max(0, y_min)
+                        y_max = max(0, y_max)
+                        res.append([int(x_min), int(y_min), int(x_max), int(y_max)])
+                return res
+            payload_dict = {
+                "detect": extract_rects(r_conf.get("hw_detect_zones", [])),
+                "block": extract_rects(r_conf.get("hw_block_zones", [])),
+                "stay": extract_rects(r_conf.get("hw_stay_zones", []))
+            }
+            payload = json.dumps(payload_dict)
             topic = f"rmm_radar/{r_name}/hw_zone/set"
             await mqtt.async_publish(hass, topic, payload, retain=True)
-            _LOGGER.info(f"RMM: Sync HW Zones (Mode {hw_mode}) to {topic}: {payload}")
+            _LOGGER.info(f"RMM: Sync JSON HW Zones to {topic}: {payload}")
     async def broadcast_monitor_zones():
         if not coordinator.data or "radars" not in coordinator.data: return
         for r_name, r_conf in coordinator.data.get("radars", {}).items():

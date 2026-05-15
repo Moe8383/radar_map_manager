@@ -212,8 +212,8 @@ class RadarMapCardNative extends HTMLElement {
                     if (this.wsConnections[rName].unsubscribe) this.wsConnections[rName].unsubscribe();
                     this.wsConnections[rName].unsubscribe = null;
                     this.state.wsTargets[rName].connected = false;
-                this.state.hass = this.getMockHass(this.state.rawHass);
-                requestAnimationFrame(() => this.renderer.draw(this.state, this.config, this.state.hass));
+                    this.state.hass = this.getMockHass(this.state.rawHass);
+                    requestAnimationFrame(() => this.renderer.draw(this.state, this.config, this.state.hass));
                     this.wsConnections[rName].nextRetry = Date.now() + 5000;
                 } else if (data.raw) {
                     try {
@@ -221,8 +221,34 @@ class RadarMapCardNative extends HTMLElement {
                         if (Array.isArray(parsed)) {
                             this.state.wsTargets[rName].targets = parsed;
                             this.state.wsTargets[rName].connected = true;
-                        this.state.hass = this.getMockHass(this.state.rawHass);
+                            this.state.hass = this.getMockHass(this.state.rawHass);
                             requestAnimationFrame(() => this.renderer.draw(this.state, this.config, this.state.hass));
+                        }
+                        else if (parsed.pc !== undefined || parsed.point_cloud !== undefined || parsed.points !== undefined || (parsed.type === 'point_cloud' && parsed.data !== undefined)) {
+                            let pcData = parsed.pc || parsed.point_cloud || parsed.points || parsed.data;
+                            if (typeof pcData === 'string') {
+                                try { pcData = JSON.parse(pcData); } catch(e) {}
+                            }
+                            if (pcData) {
+                                if (!Array.isArray(pcData)) {
+                                    if (pcData.points) pcData = pcData.points;
+                                    else if (pcData.data) pcData = pcData.data;
+                                    else pcData = [pcData];
+                                }
+                                let showPc = true;
+                                if (this.state.data && this.state.data.global_config && this.state.data.global_config.show_pointcloud === false) {
+                                    showPc = false;
+                                }
+                                if (showPc) {
+                                    this.renderer.activePointCloud = { rName: rName, points: parsed.pc };
+                                    if (this.pcWatchdog) clearTimeout(this.pcWatchdog);
+                                    this.pcWatchdog = setTimeout(() => {
+                                        this.renderer.activePointCloud = null;
+                                    }, 500);
+                                } else {
+                                    this.renderer.activePointCloud = null; 
+                                }
+                            }
                         }
                     } catch(e) {}
                 }
@@ -233,13 +259,8 @@ class RadarMapCardNative extends HTMLElement {
             this.wsConnections[rName].isConnecting = false;
             this.wsConnections[rName].unsubscribe = unsub;
         }).catch((err) => {
-            if (err.code === 'eng_mode_off') {
-                console.log(`[RMM] Radar '${rName}' Engineering Mode is OFF. WS Tunnel sleeping for 60s.`);
-                this.wsConnections[rName].nextRetry = Date.now() + 60000;
-            } else {
-                console.warn(this.t("proxy_fail", err.message));
-                this.wsConnections[rName].nextRetry = Date.now() + 5000;
-            }
+            console.warn(this.t("proxy_fail", err.message));
+            this.wsConnections[rName].nextRetry = Date.now() + 5000;
             this.wsConnections[rName].isConnecting = false;
             this.state.wsTargets[rName].connected = false;
             this.state.hass = this.getMockHass(this.state.rawHass);
@@ -357,72 +378,21 @@ class RadarMapCardNative extends HTMLElement {
                     }
                 }
             },
-            onSave: () => {
-                const elName = that.shadowRoot.getElementById('in-name');
-                const elDelay = that.shadowRoot.getElementById('in-delay');
-                let n = elName ? elName.value.trim() : ''; 
-                const d = elDelay ? parseFloat(elDelay.value) : 0; 
-                const list = that._getTargetList(that.state);
-                if (that.state.editMode === 'layout' && that.state.radar_zone_type === 'hardware_zones') {
-                    const radarData = that.state.data[that.state.radar] || {};
-                    const caps = radarData.capabilities || {};
-                    const maxHwZones = caps.max_hw_zones !== undefined ? caps.max_hw_zones : 3; 
-                    const isCreatingNew = (that.state.points.length >= 3);
-                    if (maxHwZones === 0 || (isCreatingNew && list.length >= maxHwZones)) {
-                        alert(that.editor.t("hw_limit", maxHwZones));
-                        that.state.points = [];
-                        that.state.isAddingNew = false;
-                        that.renderer.draw(that.state, that.config, that._hass);
-                        that.ui.updateStatus(that.state, that.config);
-                        return; 
-                    }
-                }
-                if (!n) {
-                    if (that.state.editMode === 'layout') {
-                        const isHW = that.state.radar_zone_type === 'hardware_zones';
-                        n = isHW ? `HW Block ${list.length + 1}` : `Monitor ${list.length + 1}`;
-                    } else {
-                        n = `Zone ${list.length + 1}`;
-                    }
-                }
-                const normalize = (str) => (str || '').trim().toLowerCase().replace(/\s+/g, '_');
-                const targetSlug = normalize(n);
-                const isDuplicate = list.some((z, idx) => {
-                    if (that.state.selectedIndex !== null && idx === that.state.selectedIndex) return false;
-                    return normalize(z.name) === targetSlug;
-                });
-                if (isDuplicate) {
-                    alert(that.editor.t("name_conflict", n));
-                    return; 
-                }
-                if (that.state.points.length >= 3) {
-                    list.push({ name: n, delay: d, points: [...that.state.points] });
-                    that.state.points = [];
-                    that.state.selectedIndex = list.length - 1;
-                } else if (that.state.selectedIndex !== null && list[that.state.selectedIndex]) {
-                    list[that.state.selectedIndex].name = n;
-                    list[that.state.selectedIndex].delay = d;
-                } else {
-                    alert(that.editor.t("draw_3"));
-                    return;
-                }
+            onSaveZoneConfig: () => {
                 that.state.isAddingNew = false;
                 that.saveToBackend();
                 that.ui.updateStatus(that.state, that.config);
-            },
-            onDelZone: () => {
-                const list = that._getTargetList(that.state);
-                if (that.state.selectedIndex !== null) {
-                    list.splice(that.state.selectedIndex, 1);
-                    that.resetSelection();
-                    that.saveToBackend();
-                }
-            },
-            onUndo: () => {
-                if (that.state.points.length > 0) that.state.points.pop();
-                else if(that.state.historyStack.length > 0) that.state.data = that.state.historyStack.pop();
                 that.renderer.draw(that.state, that.config, that._hass);
-                that.ui.updateStatus(that.state, that.config);
+            },
+            onToggleFOV: () => { 
+                if (that.state.fov_edit_mode && that.state.editMode === 'layout' && (that.state.radar_zone_type === 'hw_detect_zones' || that.state.radar_zone_type === 'hw_block_zones' || that.state.radar_zone_type === 'hw_stay_zones')) {
+                    setTimeout(() => that.saveToBackend(), 100);
+                }
+                that.state.fov_edit_mode = !that.state.fov_edit_mode; 
+                that.ui.updateStatus(that.state, that.config); 
+            },
+            onDiscardConfig: () => { 
+                that.fetchData(true); 
             },
             onTypeChange: (val) => { that.state.type = val; that.resetSelection(); },
             onRadarChange: (val) => { that.state.radar = val; that.resetSelection(); that.ui.updateRadarList(that.state, that.config); },
@@ -432,32 +402,6 @@ class RadarMapCardNative extends HTMLElement {
                 that.state.hasUnsavedChanges = true;
                 that.renderer.draw(that.state, that.config, that._hass); 
             },
-            onToggleFOV: () => { 
-                if (!that.state.fov_edit_mode && that.state.editMode === 'layout' && that.state.radar_zone_type === 'hardware_zones') {
-                    const radarData = that.state.data[that.state.radar] || {};
-                    if (!radarData.capabilities) {
-                        alert(that.editor.t("not_supported"));
-                        return; 
-                    }
-                    if (radarData.auth_passed === false) {
-                        alert(that.editor.t("auth_fail_alert"));
-                        return; 
-                    }
-                    const caps = radarData.capabilities;
-                    const maxHwZones = caps.max_hw_zones !== undefined ? caps.max_hw_zones : 3;
-                    if (maxHwZones === 0) {
-                        alert(that.editor.t("hw_unsupported", caps.model || 'Unknown'));
-                        return; 
-                    }
-                }
-                if (that.state.fov_edit_mode && that.state.editMode === 'layout' && that.state.radar_zone_type === 'hardware_zones') {
-                    setTimeout(() => that.saveToBackend(), 100);
-                }
-                that.state.fov_edit_mode = !that.state.fov_edit_mode; 
-                that.ui.updateStatus(that.state, that.config); 
-            },
-            onDiscard: () => { if(confirm(that.editor.t("discard"))) that.fetchData(true); },
-            onClear: () => { if(confirm(that.editor.t("clear_all"))) { that._getTargetList(that.state).length = 0; that.saveToBackend(); } },
             onSaveLayout: async () => {
                 if(!that.state.radar) return;
                 const r = that.state.data[that.state.radar];
@@ -489,8 +433,7 @@ class RadarMapCardNative extends HTMLElement {
                     const yEnt = that.state.hass.states[`sensor.${rName}_target_1_y`]; 
                     let rx = 0, ry = 0;
                     if (xEnt && yEnt && xEnt.state !== 'unavailable' && yEnt.state !== 'unavailable') {
-                        rx = parseFloat(xEnt.state);
-                        ry = parseFloat(yEnt.state);
+                        rx = parseFloat(xEnt.state); ry = parseFloat(yEnt.state);
                         const unit = xEnt.attributes.unit_of_measurement;
                         if (unit === 'm') { rx *= 1000; ry *= 1000; }
                         else if (unit === 'cm') { rx *= 10; ry *= 10; }
@@ -498,11 +441,9 @@ class RadarMapCardNative extends HTMLElement {
                     else {
                         const dEnt = that.state.hass.states[`sensor.${rName}_distance`]; 
                         if (dEnt && dEnt.state !== 'unavailable' && dEnt.state !== 'unknown') {
-                            rx = 0;
-                            ry = parseFloat(dEnt.state);
+                            rx = 0; ry = parseFloat(dEnt.state);
                             const unit = dEnt.attributes.unit_of_measurement;
-                            if (unit === 'm') ry *= 1000;
-                            else if (unit === 'cm') ry *= 10;
+                            if (unit === 'm') ry *= 1000; else if (unit === 'cm') ry *= 10;
                         } else {
                             return alert(that.editor.t("no_t1"));
                         }
@@ -510,20 +451,11 @@ class RadarMapCardNative extends HTMLElement {
                     const layoutCfg = that.renderer.getRadarConfig(that.state, that.state.radar, that.state.hass); 
                     const currentMapPos = that.math.calculate(layoutCfg, { x: rx, y: ry, z: 0 });
                     that.state.calibration = {
-                        active: true,
-                        raw: { x: rx, y: ry }, 
-                        map: { x: currentMapPos.left, y: currentMapPos.top } 
+                        active: true, raw: { x: rx, y: ry }, map: { x: currentMapPos.left, y: currentMapPos.top } 
                     };
                 }
                 that.ui.updateStatus(that.state, that.config);
                 that.renderer.draw(that.state, that.config, that._hass);
-            },
-            onCancelLayout: () => { 
-                that.state.layoutChanges = {}; 
-                that.state.hasUnsavedChanges = false;
-                that.ui.updateLayoutInputs(that.state, that._hass); 
-                that.renderer.draw(that.state, that.config, that._hass); 
-                that.ui.updateStatus(that.state, that.config);
             }
         };
         this.editor.bindEvents(this.state, this.config, callbacks);
@@ -572,9 +504,9 @@ class RadarMapCardNative extends HTMLElement {
             if (this.state.data[key].monitor_zones) {
                 fullData.radars[key].monitor_zones = JSON.parse(JSON.stringify(this.state.data[key].monitor_zones));
             }
-            if (this.state.data[key].hardware_zones) {
-                fullData.radars[key].hardware_zones = JSON.parse(JSON.stringify(this.state.data[key].hardware_zones));
-            }
+            if (this.state.data[key].hw_detect_zones) fullData.radars[key].hw_detect_zones = JSON.parse(JSON.stringify(this.state.data[key].hw_detect_zones));
+            if (this.state.data[key].hw_block_zones)  fullData.radars[key].hw_block_zones  = JSON.parse(JSON.stringify(this.state.data[key].hw_block_zones));
+            if (this.state.data[key].hw_stay_zones)   fullData.radars[key].hw_stay_zones   = JSON.parse(JSON.stringify(this.state.data[key].hw_stay_zones));
         });
         this._hass.callService('radar_map_manager', 'import_config', {
             config_json: JSON.stringify(fullData)

@@ -31,6 +31,14 @@ class FusionEngine:
                 entrance_zones = current_map_zones.get("entrance_zones", [])
                 origin_x = float(layout.get('origin_x', 50))
                 origin_y = float(layout.get('origin_y', 50))
+                caps = r_conf.get("capabilities", {})
+                radar_type = int(layout.get("radar_type", caps.get("radar_type", 1)))
+                radar_h_entity = self.hass.states.get(f"number.{r_name.lower()}_radar_height")
+                if radar_h_entity and radar_h_entity.state not in ['unavailable', 'unknown']:
+                    try: radar_h = float(radar_h_entity.state)
+                    except ValueError: radar_h = float(layout.get('mount_height', 2.5))
+                else:
+                    radar_h = float(layout.get('mount_height', 2.5))
                 sx = float(layout.get('scale_x', 5.0))
                 sy = float(layout.get('scale_y', 5.0))
                 map_scales.setdefault(map_group, []).append((sx + sy) / 2.0)
@@ -46,7 +54,7 @@ class FusionEngine:
                     })
                     if not raw_point.get('is_1d') and abs(raw_point['x']) < 100 and abs(raw_point['y']) < 100:
                         continue
-                    projected = self._calculate_standard_coord(layout, raw_point, target_h)
+                    projected = self._calculate_standard_coord(layout, raw_point, target_h, radar_type, radar_h)
                     if projected and projected.get('active'):
                         px, py = projected['left'], projected['top']
                         if monitor_zones:
@@ -63,7 +71,8 @@ class FusionEngine:
                             "y": py,
                             "radar": r_name,
                             "raw_id": i,
-                            "is_1d": raw_point.get('is_1d', False)
+                            "is_1d": raw_point.get('is_1d', False),
+                            "abs_height": projected.get("abs_height")
                         }
                         if target_data["is_1d"]:
                             target_data["origin_x"] = origin_x
@@ -86,9 +95,25 @@ class FusionEngine:
                 stationary_max_hold_sec = float(map_config.get("stationary_max_hold", 300.0))
                 scales = map_scales.get(map_id, [5.0])
                 avg_map_scale = sum(scales) / len(scales) if scales else 5.0
+                map_scale_x_raw = map_config.get("map_scale_x")
+                map_scale_y_raw = map_config.get("map_scale_y")
+                if map_scale_x_raw and not map_scale_y_raw:
+                    map_scale_x = float(map_scale_x_raw)
+                    map_scale_y = float(map_scale_x_raw)
+                elif map_scale_y_raw and not map_scale_x_raw:
+                    map_scale_x = float(map_scale_y_raw)
+                    map_scale_y = float(map_scale_y_raw)
+                elif map_scale_x_raw and map_scale_y_raw:
+                    map_scale_x = float(map_scale_x_raw)
+                    map_scale_y = float(map_scale_y_raw)
+                else:
+                    map_scale_x = avg_map_scale
+                    map_scale_y = avg_map_scale
+                if map_scale_x <= 0: map_scale_x = avg_map_scale
+                if map_scale_y <= 0: map_scale_y = avg_map_scale
                 fused_results = self._cluster_targets(
                     map_id, points, merge_dist, ema_level, update_interval,
-                    map_entrance, map_exclude, map_stationary, verify_delay, hibernation_ttl_sec, avg_map_scale, enable_verify_rule,
+                    map_entrance, map_exclude, map_stationary, verify_delay, hibernation_ttl_sec, map_scale_x, map_scale_y, enable_verify_rule,
                     max_jump_base, max_jump_speed, stationary_max_hold_sec, enable_tracking
                 )
                 if map_id in maps:
@@ -105,19 +130,26 @@ class FusionEngine:
         if live_data is not None:
             if i <= len(live_data):
                 target = live_data[i-1]
-                return {'x': float(target['x']), 'y': float(target['y']), 'z': 0, 'is_1d': False}
+                return {'x': float(target['x']), 'y': float(target['y']), 'z': float(target.get('z', 0)), 'is_1d': False}
             return None
         state_x = self.hass.states.get(f"sensor.{lower}_target_{i}_x")
         state_y = self.hass.states.get(f"sensor.{lower}_target_{i}_y")
+        state_z = self.hass.states.get(f"sensor.{lower}_target_{i}_z")
         if state_x and state_y:
             if state_x.state not in ['unavailable', 'unknown'] and state_y.state not in ['unavailable', 'unknown']:
                 try:
                     x = float(state_x.state)
                     y = float(state_y.state)
+                    z = 0.0
                     unit = state_y.attributes.get('unit_of_measurement', 'm')
                     if unit == 'm': x *= 1000; y *= 1000
                     elif unit == 'cm': x *= 10; y *= 10
-                    return {'x': x, 'y': y, 'z': 0, 'is_1d': False}
+                    if state_z and state_z.state not in ['unavailable', 'unknown']:
+                        z_val = float(state_z.state)
+                        if unit == 'm': z = z_val * 1000
+                        elif unit == 'cm': z = z_val * 10
+                        else: z = z_val
+                    return {'x': x, 'y': y, 'z': z, 'is_1d': False}
                 except ValueError: pass
         if i == 1:
             state_dist = self.hass.states.get(f"sensor.{lower}_distance")
@@ -132,14 +164,14 @@ class FusionEngine:
                     return {'x': 0, 'y': dist_mm, 'z': 0, 'is_1d': True} 
                 except: pass
         return None
-    def _calculate_standard_coord(self, layout, point, target_h_m=1.5):
+    def _calculate_standard_coord(self, layout, point, target_h_m=1.5, radar_type=1, radar_h=2.5):
         try:
             x_val = point['x']
             y_val = point['y']
-            enable_3d = layout.get('enable_3d', False)
+            z_val = point.get('z', 0)
+            abs_height = None
             ceiling_mount = layout.get('ceiling_mount', False)
-            if enable_3d and not ceiling_mount and y_val > 0:
-                radar_h = float(layout.get('mount_height', 2.5))
+            if radar_type == 1 and not ceiling_mount and y_val > 0:
                 h_diff = abs(radar_h - target_h_m)
                 x_m = x_val / 1000.0; y_m = y_val / 1000.0
                 slant_dist = math.sqrt(x_m**2 + y_m**2)
@@ -149,6 +181,13 @@ class FusionEngine:
                     x_val *= scale_k; y_val *= scale_k
                 else:
                     x_val = 0; y_val = 0
+            elif radar_type == 2:
+                pass
+            elif radar_type == 3:
+                if ceiling_mount:
+                    abs_height = radar_h - abs(z_val / 1000.0)
+                else:
+                    abs_height = radar_h + (z_val / 1000.0)
             xm = x_val / 1000.0
             ym = y_val / 1000.0
             if layout.get('mirror_x', False): xm = -xm
@@ -162,10 +201,10 @@ class FusionEngine:
             x_vec_x = math.cos(base_rad + (math.pi / 2)); x_vec_y = math.sin(base_rad + (math.pi / 2))
             final_x = ox + (xm * sx * x_vec_x) + (ym * sy * y_vec_x)
             final_y = oy + (xm * sx * x_vec_y) + (ym * sy * y_vec_y)
-            return {'left': final_x, 'top': final_y, 'active': True}
+            return {'left': final_x, 'top': final_y, 'active': True, 'abs_height': abs_height}
         except Exception as e:
             return None
-    def _cluster_targets(self, map_id, points, merge_dist_m=0.8, ema_level=7, update_interval=0.1, entrance_zones=None, exclude_zones=None, stationary_zones=None, verify_delay=2.5, hibernation_ttl_sec=43200, map_scale=5.0, enable_verify_rule=True, max_jump_base=1.0, max_jump_speed=2.5, stationary_max_hold_sec=300.0, enable_tracking=True):
+    def _cluster_targets(self, map_id, points, merge_dist_m=0.8, ema_level=7, update_interval=0.1, entrance_zones=None, exclude_zones=None, stationary_zones=None, verify_delay=2.5, hibernation_ttl_sec=43200, map_scale_x=5.0, map_scale_y=5.0, enable_verify_rule=True, max_jump_base=1.0, max_jump_speed=2.5, stationary_max_hold_sec=300.0, enable_tracking=True):
         import time
         current_time = time.time()
         old_targets = self._history.get(map_id, {})
@@ -179,7 +218,7 @@ class FusionEngine:
                         new_history[old_id]['hibernating'] = True
             self._history[map_id] = new_history
             return [] 
-        merge_threshold = merge_dist_m * map_scale
+        merge_threshold_m = merge_dist_m
         clusters = []
         used = [False] * len(points)
         for i in range(len(points)):
@@ -193,21 +232,21 @@ class FusionEngine:
                 already_has_radar = any(p['radar'] == p2['radar'] for p in cluster)
                 if already_has_radar:
                     continue
-                dist = float('inf')
+                dist_m = float('inf')
                 is_p1_1d = p1.get('is_1d', False)
                 is_p2_1d = p2.get('is_1d', False)
                 if is_p1_1d or is_p2_1d:
                     if is_p1_1d: ox, oy = p1.get('origin_x'), p1.get('origin_y')
                     else: ox, oy = p2.get('origin_x'), p2.get('origin_y')
                     if ox is not None and oy is not None:
-                        r1 = math.sqrt((p1['x'] - ox)**2 + (p1['y'] - oy)**2)
-                        r2 = math.sqrt((p2['x'] - ox)**2 + (p2['y'] - oy)**2)
-                        dist = abs(r1 - r2)
+                        r1 = math.sqrt(((p1['x'] - ox)/map_scale_x)**2 + ((p1['y'] - oy)/map_scale_y)**2)
+                        r2 = math.sqrt(((p2['x'] - ox)/map_scale_x)**2 + ((p2['y'] - oy)/map_scale_y)**2)
+                        dist_m = abs(r1 - r2)
                     else:
-                        dist = math.sqrt((p1['x'] - p2['x'])**2 + (p1['y'] - p2['y'])**2)
+                        dist_m = math.hypot((p1['x'] - p2['x'])/map_scale_x, (p1['y'] - p2['y'])/map_scale_y)
                 else:
-                    dist = math.sqrt((p1['x'] - p2['x'])**2 + (p1['y'] - p2['y'])**2)
-                if dist < merge_threshold:
+                    dist_m = math.hypot((p1['x'] - p2['x'])/map_scale_x, (p1['y'] - p2['y'])/map_scale_y)
+                if dist_m < merge_threshold_m:
                     cluster.append(p2)
                     used[j] = True
             clusters.append(cluster)
@@ -220,8 +259,15 @@ class FusionEngine:
             else:
                 avg_x = sum(p['x'] for p in cl) / len(cl)
                 avg_y = sum(p['y'] for p in cl) / len(cl)
+            heights = [p['abs_height'] for p in cl if p.get('abs_height') is not None]
+            avg_h = sum(heights) / len(heights) if heights else None
+            posture = 'unknown'
+            if avg_h is not None:
+                if avg_h < 0.4: posture = 'fallen'
+                elif avg_h < 1.2: posture = 'sitting'
+                else: posture = 'standing'
             sources = [f"{p['radar']}:{p['raw_id']}" for p in cl]
-            new_centroids.append({'x': avg_x, 'y': avg_y, 'count': len(cl), 'sources': sources})
+            new_centroids.append({'x': avg_x, 'y': avg_y, 'count': len(cl), 'sources': sources, 'abs_height': avg_h, 'posture': posture})
         if not enable_tracking:
             results = []
             for idx, new_c in enumerate(new_centroids):
@@ -234,20 +280,22 @@ class FusionEngine:
                             in_exclude = True
                             break
                 if in_exclude: continue
-                results.append({
+                res = {
                     "id": f"target_{idx+1}",
                     "x": round(x, 2), 
                     "y": round(y, 2),
-                    "count": new_c['count'], 
-                    "sources": new_c['sources']
-                })
+                    "count": new_c['count'],
+                    "sources": new_c['sources'],
+                    "posture": new_c['posture']
+                }
+                if new_c.get('abs_height') is not None: res['abs_height'] = round(new_c['abs_height'], 2)
+                results.append(res)
             self._history[map_id] = {}
             return results
         results = []
         base_alpha = max(0.1, min(1.0, (11 - ema_level) / 10.0))
-        max_jump_m = max_jump_base + (max_jump_speed * update_interval)
-        max_jump_dist = max_jump_m * map_scale 
-        resurrect_radius = 1.5 * map_scale
+        max_jump_m = max_jump_base + (max_jump_speed * update_interval) 
+        resurrect_radius_m = 1.5
         used_ids = set()
         for t_id in old_targets.keys():
             if t_id.startswith("target_"):
@@ -262,9 +310,9 @@ class FusionEngine:
                 if not old_targets[old_id].get('hibernating', False) and old_targets[old_id].get('is_verified', False):
                     ox = old_targets[old_id]['x']
                     oy = old_targets[old_id]['y']
-                    dist = math.hypot(new_c['x'] - ox, new_c['y'] - oy)
-                    if dist < best_dist and dist < max_jump_dist:
-                        best_dist = dist
+                    dist_m = math.hypot((new_c['x'] - ox)/map_scale_x, (new_c['y'] - oy)/map_scale_y)
+                    if dist_m < best_dist and dist_m < max_jump_m:
+                        best_dist = dist_m
                         best_id = old_id
             if best_id is None:
                 best_dist = float('inf')
@@ -272,9 +320,9 @@ class FusionEngine:
                     if old_targets[old_id].get('hibernating', False):
                         ox = old_targets[old_id]['x']
                         oy = old_targets[old_id]['y']
-                        dist = math.hypot(new_c['x'] - ox, new_c['y'] - oy)
-                        if dist < resurrect_radius and dist < best_dist:
-                            best_dist = dist
+                        dist_m = math.hypot((new_c['x'] - ox)/map_scale_x, (new_c['y'] - oy)/map_scale_y)
+                        if dist_m < resurrect_radius_m and dist_m < best_dist:
+                            best_dist = dist_m
                             best_id = old_id
                             is_resurrected = True
             if best_id is None:
@@ -283,9 +331,9 @@ class FusionEngine:
                     if not old_targets[old_id].get('hibernating', False) and not old_targets[old_id].get('is_verified', False):
                         ox = old_targets[old_id]['x']
                         oy = old_targets[old_id]['y']
-                        dist = math.hypot(new_c['x'] - ox, new_c['y'] - oy)
-                        if dist < best_dist and dist < max_jump_dist:
-                            best_dist = dist
+                        dist_m = math.hypot((new_c['x'] - ox)/map_scale_x, (new_c['y'] - oy)/map_scale_y)
+                        if dist_m < best_dist and dist_m < max_jump_m:
+                            best_dist = dist_m
                             best_id = old_id
             if best_id is not None:
                 available_old.remove(best_id)
@@ -298,14 +346,14 @@ class FusionEngine:
                 if not is_verified:
                     current_alpha = 1.0
                 else:
-                    still_threshold = 0.2 * map_scale 
-                    walk_threshold  = 1.0 * map_scale 
-                    jump_threshold  = 1.5 * map_scale
-                    if best_dist < still_threshold: current_alpha = base_alpha * 0.5
-                    elif best_dist < walk_threshold: current_alpha = base_alpha
-                    elif best_dist > jump_threshold: current_alpha = 1.0
+                    still_threshold_m = 0.2 
+                    walk_threshold_m  = 1.0 
+                    jump_threshold_m  = 1.5 
+                    if best_dist < still_threshold_m: current_alpha = base_alpha * 0.5
+                    elif best_dist < walk_threshold_m: current_alpha = base_alpha
+                    elif best_dist > jump_threshold_m: current_alpha = 1.0
                     else:
-                        ratio = (best_dist - walk_threshold) / (jump_threshold - walk_threshold)
+                        ratio = (best_dist - walk_threshold_m) / (jump_threshold_m - walk_threshold_m)
                         current_alpha = base_alpha + (1.0 - base_alpha) * ratio
                 smoothed_x = current_alpha * new_c['x'] + (1 - current_alpha) * old_x
                 smoothed_y = current_alpha * new_c['y'] + (1 - current_alpha) * old_y
@@ -368,21 +416,27 @@ class FusionEngine:
                                 currently_excluded = True
                                 break
                 if not currently_excluded:
-                    results.append({
+                    res = {
                         "id": target_id,
                         "x": round(smoothed_x, 2), 
                         "y": round(smoothed_y, 2),
-                        "count": new_c['count'], 
-                        "sources": new_c['sources']
-                    })
+                        "count": new_c['count'],
+                        "sources": new_c['sources'],
+                        "posture": new_c['posture']
+                    }
+                    if new_c.get('abs_height') is not None: res['abs_height'] = round(new_c['abs_height'], 2)
+                    results.append(res)
             else:
-                results.append({
+                res = {
                     "id": target_id,
                     "x": round(smoothed_x, 2), 
                     "y": round(smoothed_y, 2),
-                    "count": new_c['count'], 
-                    "sources": ["unverified"]
-                })
+                    "count": new_c['count'],
+                    "sources": ["unverified"],
+                    "posture": new_c['posture']
+                }
+                if new_c.get('abs_height') is not None: res['abs_height'] = round(new_c['abs_height'], 2)
+                results.append(res)
             new_history[target_id] = {
                 'x': smoothed_x, 'y': smoothed_y,
                 'is_verified': is_verified,
@@ -419,7 +473,7 @@ class FusionEngine:
                 time_since_last_seen = current_time - old_t.get('last_seen', current_time)
                 is_redundant = False
                 for ax, ay in active_verified_points:
-                    if math.hypot(old_t['x'] - ax, old_t['y'] - ay) < resurrect_radius:
+                    if math.hypot((old_t['x'] - ax)/map_scale_x, (old_t['y'] - ay)/map_scale_y) < resurrect_radius_m:
                         is_redundant = True
                         break
                 if in_stationary and not in_exclude and time_since_last_seen < specific_hold_sec and not is_redundant:
