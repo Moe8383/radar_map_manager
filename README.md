@@ -10,7 +10,7 @@
 
 It is not just a floor plan card, but a **spatial perception engine**. RMM maps data from multiple scattered millimeter-wave radars in your home onto one or more floor plans, enabling whole-house human tracking, trajectory visualization, and precise coordinate-based automation.
 
-> 🚀 V1.2 Major Upgrade! Bringing epic evolutions in performance and security! Introducing the new 10Hz In-Memory Streaming Bus (Zero I/O) to completely eliminate database bloat; adding a Zero-Trust Security Architecture; supporting Hardware-Level Polygon Zone synchronization for RMM Exclusive Radars (upcoming); and adding Entrance Zones and Stationary Hold Zones as multiple fail-safes to prevent false triggers and disappearing stationary targets.
+> 🚀 V1.3 Major Update! Introducing the all-new Global Physical Scale engine based on real-world physical distance calculations; Custom Radar Dimension Type Adaptation with full support for 2D, 2.5D, and 3D radars; Optimized Rendering and UI featuring a new dynamic display for target movement direction.
 
 ---
 
@@ -192,9 +192,13 @@ Click `Layout` in the panel to enter radar layout mode. Targets displayed here a
 
 * Mirror Mode: Check `Mirror` to invert the radar's X-axis.
 
-* 3D Correction: Check `3D` and input the radar installation `height` (in meters) to enable 3D geometric correction. If the radar height is within standard ranges, this may not be necessary.
+* Custom radar types: 2D (X/Y coordinates only), 2.5D (X/Y coordinates + mounting height parameter), or 3D (native X/Y/Z coordinates)
 
-* UNDO: Undo the last operation.
+* `H`: Radar mounting height
+
+* `3D Point Cloud`: Display radar point cloud (only applicable to exclusive radars)
+
+* `UNDO`: Undo the last operation.
 
 #### 3. Radar Monitor Zones
 
@@ -259,8 +263,14 @@ Click `Set` in the panel for global parameters.
 
 ![SET](gif/set_panel.gif)
 
+* `Calibrate X`: Set the horizontal real-world physical distance by picking points on the floor plan.
+* `Calibrate Y`: Set the vertical real-world physical distance by picking points on the floor plan.
+
 * `Interval`: Backend polling and calculation refresh interval (in seconds).
 * `Merge`: Radar target fusion distance (in meters). Targets from different radars within this distance will be merged into one.
+
+* `Arrow`: Display target movement direction.
+* `Trails`: Display target movement trails.
 
 * `Color`: Custom color for fused targets.
 * `Tgt_H`: Target centroid height, used for 3D correction.
