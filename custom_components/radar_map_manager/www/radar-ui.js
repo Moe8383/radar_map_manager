@@ -178,9 +178,9 @@ export class RadarUI {
                             <button id="btn-del-radar" class="danger" title="Del Radar" style="width:20px; padding:0; margin-left:2px;">-</button>
                             <select id="sel-radar-zone-type" style="flex:0 0 28%; margin-left:2px; height:22px; background:#222; color:white; border:1px solid #444;">
                                 <option value="monitor_zones">Monitor</option>
-                                <option value="hw_detect_zones">HW Detect (Blue)</option>
-                                <option value="hw_block_zones">HW Block (Purple)</option>
-                                <option value="hw_stay_zones">HW Stay (Orange)</option>
+                                <option value="hw_detect_zones">🟩 HW Detect</option>
+                                <option value="hw_block_zones">🟥 HW Block</option>
+                                <option value="hw_stay_zones">🟪 HW Stay</option>
                             </select>
                             <button id="btn-edit-fov" class="warning" style="width:24px; margin-left:2px;" title="Draw Region">✏️</button>
                         </div>
@@ -467,7 +467,7 @@ export class RadarUI {
                 show(zPanel); 
                 if (rowSelectType) rowSelectType.style.display = 'none';
                 if (selType) { 
-                            const currentTypeStr = state.radar_zone_type === 'hw_block_zones' ? '🟪 HW Block' : (state.radar_zone_type === 'hw_detect_zones' ? '🟦 HW Detect' : (state.radar_zone_type === 'hw_stay_zones' ? '🟧 HW Stay' : '🟨 Monitor'));
+                            const currentTypeStr = state.radar_zone_type === 'hw_block_zones' ? '🟥 HW Block' : (state.radar_zone_type === 'hw_detect_zones' ? '🟩 HW Detect' : (state.radar_zone_type === 'hw_stay_zones' ? '🟪 HW Stay' : '🟨 Monitor'));
                     selType.innerHTML = `<option value="${state.radar_zone_type || 'monitor_zones'}">${currentTypeStr}</option>`; 
                     selType.value = state.radar_zone_type || 'monitor_zones'; 
                 }
@@ -521,10 +521,16 @@ export class RadarUI {
             if (state.editMode === 'layout') {
                 if (!state.radar || !state.data[state.radar]) return [];
                 const type = state.radar_zone_type || 'monitor_zones';
-                return state.data[state.radar][type] || [];
+                if (!state.data[state.radar][type]) {
+                    state.data[state.radar][type] = [];
+                }
+                return state.data[state.radar][type];
             } else {
                 if (!state.data.global_zones) return [];
-                return state.data.global_zones[state.type] || [];
+                if (!state.data.global_zones[state.type]) {
+                    state.data.global_zones[state.type] = [];
+                }
+                return state.data.global_zones[state.type];
             }
         };
         const activeList = getList();
@@ -539,7 +545,10 @@ export class RadarUI {
             if (inName && forceUpdateName) inName.value = z.name || '';
             const isActiveDelay = (this.root.activeElement === inDelay);
             const forceUpdateDelay = hasSwitchedZone || hasSwitchedPoint || !isActiveDelay;
-            if (inDelay && forceUpdateDelay) inDelay.value = z.delay || 0;
+            if (inDelay && forceUpdateDelay) {
+                let def = (state.editMode === 'layout' && state.radar_zone_type === 'hw_stay_zones') ? 15 : 0;
+                inDelay.value = (z.delay !== undefined && z.delay !== null) ? z.delay : def;
+            }
             if (state.selectedPointIndex !== null && ptX && ptY) {
                 const pts = Array.isArray(z) ? z : z.points;
                 const p = pts[state.selectedPointIndex];
@@ -582,7 +591,13 @@ export class RadarUI {
             const isAdding = state.isAddingNew || state.points.length > 0;
             if (!isAdding) {
                 if (inName) inName.value = '';
-                if (inDelay) inDelay.value = '';
+                if (inDelay) {
+                    if (state.editMode === 'layout' && state.radar_zone_type === 'hw_stay_zones') {
+                        inDelay.value = '15';
+                    } else {
+                        inDelay.value = '';
+                    }
+                }
             }
             if (ptX) ptX.value = '';
             if (ptY) ptY.value = '';
@@ -603,7 +618,17 @@ export class RadarUI {
             }
         }
         if (inDelay) {
-            if (state.type === 'exclude_zones' || state.type === 'entrance_zones' || state.type === 'monitor_zones' || state.fov_edit_mode) { 
+            let disableDelay = false;
+            if (state.fov_edit_mode) {
+                if (state.radar_zone_type !== 'hw_stay_zones') {
+                    disableDelay = true;
+                }
+            } else {
+                if (state.type === 'exclude_zones' || state.type === 'entrance_zones' || state.type === 'monitor_zones') {
+                    disableDelay = true;
+                }
+            }
+            if (disableDelay) { 
                 inDelay.disabled = true; 
                 inDelay.style.opacity = 0.3; 
                 inDelay.value = ''; 

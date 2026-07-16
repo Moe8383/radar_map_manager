@@ -332,7 +332,7 @@ export class RadarRenderer {
         const showLabels = config.show_labels !== false; 
         const handleStroke = config.handle_stroke || 1; 
         const labelSize = parseFloat(config.label_size) || 3.5;
-        const TYPE_COLORS = { 'monitor_zones': '#FFD700', 'include_zones': '#00FF00', 'exclude_zones': '#FF0000', 'hw_detect_zones': '#00BFFF', 'hw_block_zones': '#9C27B0', 'hw_stay_zones': '#FF9800', 'entrance_zones': '#00BFFF', 'stationary_zones': '#E040FB' };
+        const TYPE_COLORS = { 'monitor_zones': '#FFD700', 'include_zones': '#00FF00', 'exclude_zones': '#FF0000', 'hw_detect_zones': '#00FF00', 'hw_block_zones': '#FF0000', 'hw_stay_zones': '#E040FB', 'entrance_zones': '#00BFFF', 'stationary_zones': '#E040FB' };
         const createPoly = (obj, typeKey, pIdx, rName) => {
             const group = this._create('g', { 'data-type': typeKey, 'data-index': pIdx, 'data-radar': rName || '' });
             const pts = Array.isArray(obj) ? obj : obj.points;
@@ -430,7 +430,7 @@ export class RadarRenderer {
                 const c3 = this.math.calculate(tempCfg, {x: maxX * 1000, y: maxY * 1000});
                 const c4 = this.math.calculate(tempCfg, {x: minX * 1000, y: maxY * 1000});
 				const boxPts = `${c1.left},${c1.top} ${c2.left},${c2.top} ${c3.left},${c3.top} ${c4.left},${c4.top}`;
-				const boxColor = (typeKey === 'hw_detect_zones') ? '#00BFFF' : (typeKey === 'hw_stay_zones' ? '#FF9800' : '#E040FB'); 
+				const boxColor = TYPE_COLORS[typeKey] || '#FFFFFF'; 
 				group.appendChild(this._create('polygon', { points: boxPts }, {
 					fill: 'none', stroke: boxColor, strokeWidth: zoneStroke * 0.8, 
 					strokeDasharray: '2,2', pointerEvents: 'none', opacity: 0.8
@@ -462,7 +462,8 @@ export class RadarRenderer {
         }
         if (state.points.length > 0) {
             let activeType = state.type; 
-            if (state.fov_edit_mode) activeType = state.radar_zone_type || 'monitor_zones';
+            if (state.editMode === 'layout') activeType = state.radar_zone_type || 'monitor_zones';
+            else if (state.editMode === 'global') activeType = state.global_zone_type || 'include_zones';
             const color = TYPE_COLORS[activeType] || 'white';
             if (state.isCalibratingMap) {
                 state.points.forEach(p => svg.appendChild(this._create('circle', { cx: p[0], cy: p[1], r: baseR * 1.5 }, { fill: '#FFD700', stroke: 'white', strokeWidth: 1, pointerEvents: 'none' })));

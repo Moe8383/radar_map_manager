@@ -165,7 +165,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                         if y_min > y_max: y_min, y_max = y_max, y_min
                         y_min = max(0, y_min)
                         y_max = max(0, y_max)
-                        res.append([int(x_min), int(y_min), int(x_max), int(y_max)])
+                        dly = 0
+                        if "delay" in zones[i]:
+                            try:
+                                dly = int(float(zones[i]["delay"]))
+                            except:
+                                pass
+                        res.append([int(x_min), int(y_min), int(x_max), int(y_max), dly])
                 return res
             payload_dict = {
                 "detect": extract_rects(r_conf.get("hw_detect_zones", [])),

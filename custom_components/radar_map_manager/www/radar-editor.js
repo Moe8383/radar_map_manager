@@ -27,10 +27,6 @@ const EDITOR_I18N = {
     "sel_radar": { "zh": "请先选择一个雷达。", "en": "Please select a radar first." },
     "no_t1": { "zh": "未在当前雷达上找到活跃的 Target 1。无法冻结校准。", "en": "No active Target 1 found on this radar. Cannot freeze." },
     "confirm_pc": { "zh": "⚠️ 警告：开启点云数据会大幅增加雷达发热与 Wi-Fi 带宽，仅建议在绘制盲区/调试时短暂使用！\n\n确定要立即开启 3D 点云直连通道吗？", "en": "⚠️ WARNING: Point Cloud greatly increases heat and Wi-Fi load. Recommended for debug only!\n\nEnable 3D point cloud stream now?" },
-    "confirm_ld6002b_detect": { 
-        "zh": "⚠️提示：\nLD6002B 的【硬件检测区(蓝框)】仅能控制其物理 TX2 引脚的高低电平，并不会过滤串口输出的坐标数据！\n\n👉 如果您希望在 HA 界面和实体中过滤区域外的目标，请点击 [取消]，并使用【Monitor (软件监控区 - 黄框)】来代替。\n\n是否仍要强制保存此硬件检测区？", 
-        "en": "⚠️ Note:\nLD6002B's [HW Detect Zone (Blue)] ONLY controls its physical TX2 pin high/low level, and WILL NOT filter coordinate data via UART!\n\n👉 If you want to filter out targets outside the zone in HA, please click [Cancel] and use [Monitor Zone (Yellow)] instead.\n\nStill force save this Hardware Detect Zone?"
-    },
     "hw_stay_unsupported": {
         "zh": "⚠️ 硬件限制：当前雷达 ({0}) 不支持【驻留区 (HW Stay)】！\n\n💡 目前仅 LD6004 型号支持此区域。",
         "en": "⚠️ Hardware Limit: Current radar ({0}) does not support [HW Stay Zone]!\n\n💡 Currently only the LD6004 model supports this zone."
@@ -607,7 +603,10 @@ export class RadarEditor {
                     const elName = this.root.getElementById('in-name');
                     const elDelay = this.root.getElementById('in-delay');
                     let n = elName ? elName.value.trim() : ''; 
-                    const d = elDelay ? parseFloat(elDelay.value) : 0; 
+                    let d = elDelay ? parseFloat(elDelay.value) : NaN;
+                    if (isNaN(d)) {
+                        d = (state.editMode === 'layout' && state.radar_zone_type === 'hw_stay_zones') ? 15 : 0;
+                    }
                     if (state.editMode === 'layout' && (state.radar_zone_type === 'hw_detect_zones' || state.radar_zone_type === 'hw_block_zones' || state.radar_zone_type === 'hw_stay_zones')) {
                         const radarData = state.data[state.radar] || {};
                         const caps = radarData.capabilities || {};
@@ -630,7 +629,7 @@ export class RadarEditor {
                                 otherZones = radarData.hw_detect_zones || [];
                             }
                             if (otherZones.length > 0) {
-                                const typeNames = { 'hw_detect_zones': '【硬件检测区(蓝)】', 'hw_block_zones': '【硬件屏蔽区(紫)】' };
+                                const typeNames = { 'hw_detect_zones': '【硬件检测区(绿)】', 'hw_block_zones': '【硬件屏蔽区(红)】' };
                                 const curName = typeNames[state.radar_zone_type];
                                 const otherName = typeNames[otherType];
                                 const msg = `⚠️ 硬件限制：LD2450 无法同时开启 ${curName} 和 ${otherName}！\n\n是否将已有的 ${otherName} 全部转换为 ${curName}？\n\n👉 点击 [确定] 自动合并并保存\n👉 点击 [取消] 放弃保存`;
@@ -642,17 +641,6 @@ export class RadarEditor {
                                     });
                                     state.data[state.radar][otherType] = []; 
                                 } else {
-                                    state.points = []; state.isAddingNew = false;
-                                    this.renderer.draw(state, config, state.hass);
-                                    this.ui.updateStatus(state, config);
-                                    return; 
-                                }
-                            }
-                        }
-                        else if (caps.model === 'LD6002B') {
-                            if (state.radar_zone_type === 'hw_detect_zones' && isCreatingNew) {
-                                const msg = this.t("confirm_ld6002b_detect");
-                                if (!window.confirm(msg)) {
                                     state.points = []; state.isAddingNew = false;
                                     this.renderer.draw(state, config, state.hass);
                                     this.ui.updateStatus(state, config);
@@ -692,6 +680,9 @@ export class RadarEditor {
                         list[state.selectedIndex].delay = d;
                     } else {
                         alert(this.t("draw_3")); return;
+                    }
+                    if (state.editMode === 'layout' && state.radar_zone_type === 'hw_stay_zones') {
+                        list.forEach(z => { z.delay = d; });
                     }
                     exitAddMode();
                     if(callbacks.onSaveZoneConfig) callbacks.onSaveZoneConfig(); 
@@ -1182,10 +1173,16 @@ function getActiveList(state) {
     if (state.editMode === 'layout') {
         if (!state.data[state.radar]) return [];
         const type = state.radar_zone_type || 'monitor_zones';
-        return state.data[state.radar][type] || [];
+        if (!state.data[state.radar][type]) {
+            state.data[state.radar][type] = [];
+        }
+        return state.data[state.radar][type];
     } else {
         if (!state.data.global_zones) return [];
-        return state.data.global_zones[state.type] || [];
+        if (!state.data.global_zones[state.type]) {
+            state.data.global_zones[state.type] = [];
+        }
+        return state.data.global_zones[state.type];
     }
 }
 function bindStepper(editor, btnId, inputId, step, callbacks, paramKey) {

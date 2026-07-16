@@ -96,7 +96,7 @@ class RadarCoordinator:
             await self.async_save()
     async def async_update_zone(self, radar_name, zone_type, points, map_group="default"):
         if radar_name and radar_name in self.data["radars"]:
-            if zone_type in ["monitor_zones"]:
+            if zone_type in ["monitor_zones", "hw_detect_zones", "hw_block_zones", "hw_stay_zones"]:
                 self.data["radars"][radar_name][zone_type] = points
                 await self.async_save()
                 return
