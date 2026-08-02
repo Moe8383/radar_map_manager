@@ -1,12 +1,16 @@
 {
   "domain": "radar_map_manager",
   "name": "Radar Map Manager",
-  "codeowners": ["@Moe8383"],
+  "codeowners": [
+    "@Moe8383"
+  ],
   "config_flow": true,
-  "dependencies": ["http"],
+  "dependencies": [
+    "http"
+  ],
   "documentation": "https://github.com/Moe8383/radar_map_manager",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/Moe8383/radar_map_manager/issues",
   "requirements": [],
-  "version": "1.3.3"
+  "version": "1.3.4"
 }
