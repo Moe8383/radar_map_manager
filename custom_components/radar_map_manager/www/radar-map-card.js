@@ -210,17 +210,23 @@ class RadarMapCardNative extends HTMLElement {
         }
     }
     connectWS(rName) {
-        this.wsConnections[rName] = { isConnecting: true };
+        if (!this.wsConnections[rName]) {
+            this.wsConnections[rName] = {};
+        }
+        const conn = this.wsConnections[rName];
+        conn.isConnecting = true;
         this.state.wsTargets[rName] = { connected: false, targets: [] };
         this._hass.connection.subscribeMessage(
             (data) => {
                 if (data.event === 'closed') {
-                    if (this.wsConnections[rName].unsubscribe) this.wsConnections[rName].unsubscribe();
-                    this.wsConnections[rName].unsubscribe = null;
+                    if (conn.unsubscribe) conn.unsubscribe();
+                    conn.unsubscribe = null;
                     this.state.wsTargets[rName].connected = false;
                     this.state.hass = this.getMockHass(this.state.rawHass);
                     requestAnimationFrame(() => this.renderer.draw(this.state, this.config, this.state.hass));
-                    this.wsConnections[rName].nextRetry = Date.now() + 5000;
+                    conn.retryCount = (conn.retryCount || 0) + 1;
+                    const backoff = Math.min(30000, 5000 * Math.pow(2, Math.min(conn.retryCount - 1, 3)));
+                    conn.nextRetry = Date.now() + backoff;
                 } else if (data.raw) {
                     try {
                         const parsed = JSON.parse(data.raw);
@@ -262,12 +268,22 @@ class RadarMapCardNative extends HTMLElement {
             { type: 'rmm/subscribe_stream', radar_name: rName }
         ).then((unsub) => {
             console.log(this.t("proxy_ok", rName));
-            this.wsConnections[rName].isConnecting = false;
-            this.wsConnections[rName].unsubscribe = unsub;
+            conn.isConnecting = false;
+            conn.unsubscribe = unsub;
+            conn.retryCount = 0;
+            conn.lastError = null;
         }).catch((err) => {
-            console.warn(this.t("proxy_fail", err.message));
-            this.wsConnections[rName].nextRetry = Date.now() + 5000;
-            this.wsConnections[rName].isConnecting = false;
+            const errStr = (err && err.message) ? err.message : String(err);
+            if (conn.lastError !== errStr) {
+                console.warn(this.t("proxy_fail", errStr));
+                conn.lastError = errStr;
+            } else {
+                console.debug(this.t("proxy_fail", errStr));
+            }
+            conn.retryCount = (conn.retryCount || 0) + 1;
+            const backoff = Math.min(30000, 5000 * Math.pow(2, Math.min(conn.retryCount - 1, 3)));
+            conn.nextRetry = Date.now() + backoff;
+            conn.isConnecting = false;
             this.state.wsTargets[rName].connected = false;
             this.state.hass = this.getMockHass(this.state.rawHass);
             requestAnimationFrame(() => this.renderer.draw(this.state, this.config, this.state.hass));
