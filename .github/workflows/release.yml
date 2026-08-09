@@ -1,0 +1,25 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  release:
+    name: Upload Release Asset
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Zip custom_components
+        run: |
+          cd custom_components/radar_map_manager
+          zip -r ../../radar_map_manager.zip .
+
+      - name: Upload Zip to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: radar_map_manager.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
