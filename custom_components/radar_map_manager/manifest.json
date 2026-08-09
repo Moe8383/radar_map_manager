@@ -9,8 +9,9 @@
     "http"
   ],
   "documentation": "https://github.com/Moe8383/radar_map_manager",
+  "integration_type": "hub",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/Moe8383/radar_map_manager/issues",
   "requirements": [],
-  "version": "1.3.4"
+  "version": "1.3.5"
 }
