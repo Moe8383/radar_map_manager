@@ -2,7 +2,7 @@ name: Release
 
 on:
   release:
-    types: [published]
+    types: [published, created, edited]
 
 jobs:
   release:
@@ -18,7 +18,7 @@ jobs:
           zip -r ../../radar_map_manager.zip .
 
       - name: Upload Zip to Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: radar_map_manager.zip
         env:
