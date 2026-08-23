@@ -10,6 +10,18 @@
       "single_instance_allowed": "雷达地图中控 (RMM) 已经配置过了，该集成仅需安装一次即可统管所有雷达。"
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "RMM 通信与 UDP 设置",
+        "description": "配置 RMM 雷达目标高频数据流的 UDP 极速接收通道与监听端口。",
+        "data": {
+          "enable_udp": "启用 UDP 极速监听服务",
+          "udp_port": "UDP 监听端口 (默认 18888)"
+        }
+      }
+    }
+  },
   "entity": {
     "sensor": {
       "presence_target_count": {"name": "目标总人数"},

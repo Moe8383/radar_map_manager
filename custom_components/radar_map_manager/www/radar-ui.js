@@ -171,18 +171,22 @@ export class RadarUI {
                         <button id="btn-mode-settings">Set</button>
                     </div>
                     <div id="layout-tools" class="content">
-						<div id="layout-header-row" class="row">
+						<div id="layout-header-row" class="row" style="margin-bottom: 3px;">
                             <select id="sel-radar" style="flex:1; width:auto; min-width:0;"></select>
                             <button id="btn-add-radar" class="success" title="Add Radar" style="width:20px; padding:0;">+</button>
                             <button id="btn-edit-radar" class="primary" title="Edit Radar Params" style="width:20px; padding:0; margin-left:2px;">✎</button>
+                            <button id="btn-pause-radar" title="Pause Radar" style="width:20px; padding:0; margin-left:2px; background:#4CAF50; color:white; border:none; border-radius:3px; cursor:pointer; font-size:10px;">⏸</button>
                             <button id="btn-del-radar" class="danger" title="Del Radar" style="width:20px; padding:0; margin-left:2px;">-</button>
-                            <select id="sel-radar-zone-type" style="flex:0 0 28%; margin-left:2px; height:22px; background:#222; color:white; border:1px solid #444;">
-                                <option value="monitor_zones">Monitor</option>
+                        </div>
+                        <div class="row" style="margin-bottom: 4px;">
+                            <select id="sel-radar-zone-type" style="flex:1; min-width:0; height:22px; background:#222; color:white; border:1px solid #444;">
+                                <option value="monitor_zones">🟨 Monitor</option>
                                 <option value="hw_detect_zones">🟩 HW Detect</option>
                                 <option value="hw_block_zones">🟥 HW Block</option>
                                 <option value="hw_stay_zones">🟪 HW Stay</option>
                             </select>
-                            <button id="btn-edit-fov" class="warning" style="width:24px; margin-left:2px;" title="Draw Region">✏️</button>
+                            <button id="btn-edit-fov" class="warning" style="width:26px; margin-left:2px; height:22px;" title="Draw Region">✏️</button>
+                            <button id="btn-auto-block" class="primary" style="display:none; width:auto; padding:0 6px; margin-left:2px; height:22px; font-size:10px; font-weight:bold; background:#1976D2; color:white; border:none; border-radius:3px; cursor:pointer;" title="Auto Learn Block Zones">🪄 Auto</button>
                         </div>
                         <div id="layout-inner-params">
                             <div class="row">
@@ -385,6 +389,15 @@ export class RadarUI {
                             </div>
                             <span id="val-mjs" style="width:30px; text-align:right">2.5m/s</span>
                         </div>
+                        <div class="row" id="row-ab-dur">
+                            <label style="width:40px" title="Auto-Block Scan Duration (5-50s)">AB_Time</label>
+                            <div class="slider-row">
+                                <button class="stepper" id="btn-ab-minus">-</button>
+                                <input type="range" id="set-ab-range" min="5" max="50" step="5" class="slider">
+                                <button class="stepper" id="btn-ab-plus">+</button>
+                            </div>
+                            <span id="val-ab" style="width:30px; text-align:right">15s</span>
+                        </div>
                         </div> <!-- ✨ 结束滚动区域 -->
                         <div class="separator" style="margin: 1px 0;"></div>
                         <div class="actions">
@@ -461,6 +474,7 @@ export class RadarUI {
             const selRadar = this.root.getElementById('sel-radar');
             const btnAdd = this.root.getElementById('btn-add-radar');
             const btnEdit = this.root.getElementById('btn-edit-radar');
+            const btnPause = this.root.getElementById('btn-pause-radar');
             const btnDel = this.root.getElementById('btn-del-radar');
             if (state.fov_edit_mode) {
                 if(innerParams) innerParams.style.display = 'none'; 
@@ -475,6 +489,7 @@ export class RadarUI {
                 if(selRadar) selRadar.disabled = true;
                 if(btnAdd) btnAdd.disabled = true;
                 if(btnEdit) btnEdit.disabled = true;
+                if(btnPause) btnPause.disabled = true;
                 if(btnDel) btnDel.disabled = true;
                 const selRadarZoneType = this.root.getElementById('sel-radar-zone-type');
                 if(selRadarZoneType) selRadarZoneType.disabled = true; 
@@ -484,9 +499,14 @@ export class RadarUI {
                 if(selRadar) selRadar.disabled = false;
                 if(btnAdd) btnAdd.disabled = false;
                 if(btnEdit) btnEdit.disabled = false;
+                if(btnPause) btnPause.disabled = (!state.radar || state.radar === 'rd_default');
                 if(btnDel) btnDel.disabled = false;
                 const selRadarZoneType = this.root.getElementById('sel-radar-zone-type');
                 if(selRadarZoneType) selRadarZoneType.disabled = false;
+            }
+            const btnAutoBlock = this.root.getElementById('btn-auto-block');
+            if (btnAutoBlock) {
+                btnAutoBlock.style.display = (state.radar_zone_type === 'hw_block_zones' && !state.fov_edit_mode) ? 'inline-block' : 'none';
             }
         } else if (state.editMode === 'zone') {
             show(zPanel);
@@ -695,6 +715,7 @@ export class RadarUI {
         bindControl('set-mjb-range', 'val-mjb', 'btn-mjb-minus', 'btn-mjb-plus', 'max_jump_base', 1.5, 'm');
         bindControl('set-mjs-range', 'val-mjs', 'btn-mjs-minus', 'btn-mjs-plus', 'max_jump_speed', 2.5, 'm/s');
         bindControl('set-sh-range', 'val-sh', 'btn-sh-minus', 'btn-sh-plus', 'stationary_max_hold', 300, 's');
+        bindControl('set-ab-range', 'val-ab', 'btn-ab-minus', 'btn-ab-plus', 'auto_block_duration', 15, 's');
         const chkTrack = this.root.getElementById('chk-enable-tracking');
         if (chkTrack) {
             let isTrackEn = (conf.enable_tracking !== undefined) ? conf.enable_tracking : true;
@@ -702,7 +723,7 @@ export class RadarUI {
             const updateTrackState = () => {
                 const op = chkTrack.checked ? '1' : '0.3';
                 const ptr = chkTrack.checked ? 'auto' : 'none';
-                ['row-ema', 'row-verify', 'row-hbm', 'row-sh', 'row-mjb', 'row-mjs'].forEach(id => {
+                ['row-ema', 'row-verify', 'row-hbm', 'row-sh', 'row-mjb', 'row-mjs', 'row-ab-dur'].forEach(id => {
                     const el = this.root.getElementById(id);
                     if(el) { el.style.opacity = op; el.style.pointerEvents = ptr; }
                 });
@@ -923,6 +944,30 @@ export class RadarUI {
                         chkEng.checked = !intendedState;
                     }
                 };
+            }
+        }
+        const btnPause = this.root.getElementById('btn-pause-radar');
+        if (btnPause) {
+            if (!rName || rName === 'rd_default') {
+                btnPause.disabled = true;
+                btnPause.style.background = '#555';
+                btnPause.style.opacity = '0.5';
+                btnPause.innerText = '⏸';
+                btnPause.title = 'No radar selected';
+            } else {
+                if (!state.fov_edit_mode) btnPause.disabled = false;
+                btnPause.style.opacity = '1';
+                const isPaused = (state.data[rName] && state.data[rName].paused === true);
+                const isZh = (hass && hass.language && hass.language.startsWith('zh'));
+                if (isPaused) {
+                    btnPause.innerText = '▶';
+                    btnPause.style.background = '#757575';
+                    btnPause.title = isZh ? `雷达 ${rName} 已暂停 (点击开始)` : `Radar ${rName} Paused (Click to Start)`;
+                } else {
+                    btnPause.innerText = '⏸';
+                    btnPause.style.background = '#4CAF50';
+                    btnPause.title = isZh ? `雷达 ${rName} 运行中 (点击暂停)` : `Radar ${rName} Running (Click to Pause)`;
+                }
             }
         }
     }

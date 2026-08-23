@@ -27,6 +27,23 @@ remove_radar:
       selector:
         text:
 
+set_radar_pause:
+  name: Set Radar Pause
+  description: Pauses or resumes data reception for a specific radar.
+  fields:
+    radar_name:
+      name: Radar Name
+      description: The unique name of the radar.
+      required: true
+      selector:
+        text:
+    paused:
+      name: Paused
+      description: True to pause data reception, False to resume.
+      required: true
+      selector:
+        boolean:
+
 update_radar_zone:
   name: Update Zone
   description: "Updates or adds a zone. If radar_name is omitted, it updates a global zone for the specified map."
@@ -125,12 +142,19 @@ update_global_config:
 
 import_config:
   name: Import Configuration
-  description: Restore full configuration from a JSON string.
+  description: Restore full configuration or single map configuration from a JSON string.
   fields:
-    json_str:
+    config_json:
       name: JSON String
-      description: The full JSON configuration string exported from the UI.
+      description: The JSON configuration string exported from the UI.
       required: true
       selector:
         text:
           multiline: true
+    map_group:
+      name: Map Group
+      description: Target map group when importing a legacy single-floor backup. Defaults to 'default'.
+      required: false
+      default: default
+      selector:
+        text:

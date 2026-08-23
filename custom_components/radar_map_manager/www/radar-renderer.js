@@ -54,6 +54,7 @@ export class RadarRenderer {
     drawPointCloud() {
         if (!this.activePointCloud || !this.activePointCloud.points || this.activePointCloud.points.length === 0) return;
         const rName = this.activePointCloud.rName;
+        if (this.currentState.data && this.currentState.data[rName] && this.currentState.data[rName].paused === true) return;
         const points = this.activePointCloud.points;
         const cfg = this.getRadarConfig(this.currentState, rName, this.currentHass);
         const rect = this.canvas.getBoundingClientRect();
@@ -257,14 +258,19 @@ export class RadarRenderer {
                     isOffline = true;
                 }
             }
+            const rData = state.data[rName] || {};
+            const isPaused = (rData.paused === true);
             let opacity = 0.4;
             let strokeColor = '#666';
             if (isCurrent) {
-                strokeColor = '#FFD700'; 
-                opacity = state.fov_edit_mode ? 0.2 : 1.0;
+                strokeColor = isPaused ? '#888888' : '#FFD700'; 
+                opacity = state.fov_edit_mode ? 0.2 : (isPaused ? 0.6 : 1.0);
             } else if (isOffline) {
                 strokeColor = '#dc3545'; 
                 opacity = 0.6;
+            } else if (isPaused) {
+                strokeColor = '#555555'; 
+                opacity = 0.45;
             } else {
                 strokeColor = '#03A9F4'; 
                 opacity = 0.7;
@@ -305,13 +311,13 @@ export class RadarRenderer {
                 group.appendChild(this._create('line', { x1: ox, y1: oy, x2: hx, y2: hy }, { stroke: strokeColor, strokeWidth: '0.8', strokeDasharray: '4,2', opacity: opacity, pointerEvents: 'none' }));
                 group.appendChild(this._create('circle', { cx: hx, cy: hy, r: 1.2, class: 'radar-handle-rot', 'data-id': rName, 'data-radar': rName }, { fill: 'cyan', stroke: 'white', strokeWidth: '0.5', opacity: opacity, pointerEvents: ptrEvents, cursor: 'alias' }));
                 const txt = this._create('text', { x: hx, y: hy - 2 }, { fontSize: `${avatarFontSize}px`, fill: 'cyan', textAnchor: 'middle', fontWeight: 'bold', pointerEvents: 'none', textShadow: '1px 1px 1px black', opacity: opacity });
-                txt.textContent = `${Math.round(cfg.rotation)}°`;
+                txt.textContent = isPaused ? `${Math.round(cfg.rotation)}° ⏸` : `${Math.round(cfg.rotation)}°`;
                 group.appendChild(txt);
                 group.appendChild(this._create('line', { x1: 0, y1: oy, x2: 100, y2: oy }, { stroke: 'rgba(255, 255, 0, 0.3)', strokeWidth: '0.2', pointerEvents: 'none' }));
                 group.appendChild(this._create('line', { x1: ox, y1: 0, x2: ox, y2: 100 }, { stroke: 'rgba(255, 255, 0, 0.3)', strokeWidth: '0.2', pointerEvents: 'none' }));
             } else {
                 const name = this._create('text', { x: ox, y: oy + 3 }, { fontSize: `${avatarFontSize * 0.8}px`, fill: strokeColor, textAnchor: 'middle', pointerEvents: 'none', textShadow: '1px 1px 1px black', fontWeight: 'bold' });
-                name.textContent = isOffline ? `${rName} (Off)` : rName;
+                name.textContent = isOffline ? `${rName} (Off)` : (isPaused ? `${rName} (⏸)` : rName);
                 group.appendChild(name);
             }
             svg.appendChild(group);
@@ -647,9 +653,10 @@ export class RadarRenderer {
                 const targetsToDraw = typeof radarList !== 'undefined' ? radarList : this._getAllRadars(state, config, hass);
                 targetsToDraw.forEach(rObj => {
                     const rName = rObj.name;
+                    const rData = state.data[rName] || {};
+                    if (rData.paused === true) return; 
                     const cfg = this.getRadarConfig(state, rName, hass);
                     const isSelected = (rName === state.radar); 
-                    const rData = state.data[rName] || {};
                     const maxT = (rData.capabilities && rData.capabilities.max_targets) ? rData.capabilities.max_targets : 5;
                     for (let i = 1; i <= maxT; i++) {
                         this.processTarget(hass, rName, i, cfg, targetRadius, showLabels, userColors, defColors, null, layer, currentActiveIds, isSelected);

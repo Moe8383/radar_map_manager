@@ -18,7 +18,11 @@ const EDITOR_I18N = {
     "dup_name": { "zh": "⚠️ 雷达 \"{0}\" 已经存在于地图中!", "en": "⚠️ Radar \"{0}\" already exists in the map!" },
     "ha_reject": { "zh": "❌ HA 拒绝了请求: ", "en": "❌ HA rejected the request: " },
     "del_radar": { "zh": "确定要删除 {0} 吗？", "en": "Delete {0}?" },
+    "pause_radar": { "zh": "雷达运行中 (点击暂停)", "en": "Radar Running (Click to Pause)" },
+    "resume_radar": { "zh": "雷达已暂停 (点击恢复)", "en": "Radar Paused (Click to Resume)" },
     "del_zone": { "zh": "确定要删除该区域吗？", "en": "Are you sure you want to delete this zone?" },
+    "confirm_restore": { "zh": "⚠️ 恢复备份将应用导入的雷达和区域配置。\n\n确定要立即恢复吗？", "en": "⚠️ Restoring backup will apply imported radar and zone configurations.\n\nProceed to restore now?" },
+    "restore_ok": { "zh": "✅ 配置恢复成功！页面即将自动刷新...", "en": "✅ Configuration restored successfully! Reloading page..." },
     "unsaved": { "zh": "检测到未保存的更改！现在保存吗？", "en": "Unsaved changes detected! Save now?" },
     "draw_3": { "zh": "请绘制至少3个点，或选择一个区域。", "en": "Please draw 3+ points or select a zone." },
     "name_conflict": { "zh": "名称冲突！\"{0}\" 将导致实体ID重复。请使用唯一的名称。", "en": "Name conflict! \"{0}\" will result in a duplicate Entity ID. Please use a unique name." },
@@ -34,6 +38,18 @@ const EDITOR_I18N = {
     "calib_prompt": {
         "zh": "请输入这条线段的真实物理长度（米）：\n例如: 4.5",
         "en": "Enter the real physical length of this line (Meters):\nFor example: 4.5"
+    },
+    "auto_block_prompt": {
+        "zh": "🪄 确定要启动【自动识别排除区】吗？\n\n1. 系统将开启 15 秒环境噪点深度扫描\n2. 扫描期间请离开雷达探测区域并保持环境无人移动\n3. 扫描结束后将自动识别固定微动噪点（如风扇、绿植）并生成排除区矩形",
+        "en": "🪄 Start [Auto Learn Block Zones]?\n\n1. System will scan stationary environment for 15 seconds\n2. Please stay clear of the detection area during scanning\n3. Upon completion, static noise sources (fans, plants) will be auto-converted into block zones"
+    },
+    "auto_block_started": {
+        "zh": "⏳ 自动识别排除区已启动！请保持探测区域静止，15 秒后将自动更新地图...",
+        "en": "⏳ Auto Learn Block Zones started! Please stay clear, map will update in 15s..."
+    },
+    "auto_block_completed": {
+        "zh": "✅ 自动识别排除区完成！已成功同步并更新地图。",
+        "en": "✅ Auto Learn Block Zones completed! Map updated successfully."
     }
 };
 export class RadarEditor {
@@ -218,6 +234,34 @@ export class RadarEditor {
             }
             exitAddMode();
             if(callbacks.onToggleFOV) callbacks.onToggleFOV(); 
+        });
+        bindClick('btn-auto-block', async () => {
+            if (!state.radar) {
+                alert(this.t("sel_radar"));
+                return;
+            }
+            const radarData = state.data[state.radar] || {};
+            if (radarData.auth_passed === false) {
+                alert(this.t("auth_fail_alert"));
+                return;
+            }
+            const promptMsg = this.t("auto_block_prompt");
+            if (!confirm(promptMsg)) return;
+            const scanDuration = (config && config.auto_block_duration) ? parseInt(config.auto_block_duration) : 15;
+            try {
+                if (this.host.state.hass) {
+                    await this.host.state.hass.callService("mqtt", "publish", {
+                        topic: `rmm_radar/${state.radar}/auto_block/set`,
+                        payload: JSON.stringify({ action: "START", duration: scanDuration, mode: "merge" })
+                    });
+                }
+                if (this.host.showAutoBlockProgress) {
+                    this.host.showAutoBlockProgress(scanDuration);
+                }
+            } catch (err) {
+                console.error("AutoBlock failed to start:", err);
+                alert(this.t("ha_reject") + (err.message || err));
+            }
         });
         bindLayoutInput(this, 'layout-x', 'origin_x', callbacks); 
         bindLayoutInput(this, 'layout-y', 'origin_y', callbacks); 
@@ -478,6 +522,36 @@ export class RadarEditor {
             }
             showRadarModal(true);
         });
+        bindClick('btn-pause-radar', () => {
+            if (!state.radar || state.radar === 'rd_default') return alert(this.t("sel_radar"));
+            const rName = state.radar;
+            const currentData = state.data[rName] || {};
+            const nextPaused = !(currentData.paused === true);
+            if (!state.data[rName]) state.data[rName] = {};
+            state.data[rName].paused = nextPaused;
+            if (nextPaused) {
+                if (this.renderer.activePointCloud && this.renderer.activePointCloud.rName === rName) {
+                    this.renderer.activePointCloud = null;
+                }
+                if (this.host.state && this.host.state.wsTargets && this.host.state.wsTargets[rName]) {
+                    this.host.state.wsTargets[rName].targets = [];
+                }
+            }
+            this.ui.updateLayoutInputs(state, state.hass);
+            this.renderer.draw(state, config, state.hass);
+            state.hass.callService('radar_map_manager', 'set_radar_pause', {
+                radar_name: rName,
+                paused: nextPaused
+            }).then(() => {
+                console.log(`RMM: Radar '${rName}' pause state set to: ${nextPaused}`);
+            }).catch(err => {
+                console.error(`RMM: Failed to set radar pause state:`, err);
+                state.data[rName].paused = !nextPaused;
+                this.ui.updateLayoutInputs(state, state.hass);
+                this.renderer.draw(state, config, state.hass);
+                alert(this.t("ha_reject") + JSON.stringify(err));
+            });
+        });
         bindClick('btn-del-radar', () => {
             if(!state.radar || state.radar === 'rd_default') return alert(this.t("sel_radar"));
             if(confirm(this.t("del_radar", state.radar))) {
@@ -724,12 +798,42 @@ export class RadarEditor {
             };
         }
         bindClick('btn-backup', () => {
-            const dataStr = JSON.stringify(state.data, null, 2);
+            let exportData = null;
+            if (this.host && this.host.fullRawData) {
+                exportData = JSON.parse(JSON.stringify(this.host.fullRawData));
+                delete exportData.discovered_radars;
+                delete exportData._force_reset_history;
+                if (exportData.maps) {
+                    Object.values(exportData.maps).forEach(m => {
+                        if (m && m.targets) delete m.targets;
+                    });
+                }
+            } else {
+                const currentMg = state.mapGroup || "default";
+                exportData = {
+                    version: 1,
+                    maps: {
+                        [currentMg]: {
+                            zones: state.data.global_zones || { include_zones: [], exclude_zones: [] },
+                            config: state.data.global_config || {}
+                        }
+                    },
+                    radars: {}
+                };
+                Object.entries(state.data || {}).forEach(([k, v]) => {
+                    if (!['global_zones', 'global_config', 'fused_targets'].includes(k)) {
+                        exportData.radars[k] = { ...v, map_group: currentMg };
+                    }
+                });
+            }
+            const dataStr = JSON.stringify(exportData, null, 2);
             const blob = new Blob([dataStr], { type: "application/json" });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
-            a.href = url; a.download = `radar_config_backup_${Date.now()}.json`;
-            a.click(); URL.revokeObjectURL(url);
+            a.href = url;
+            a.download = `rmm_full_backup_${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
         });
         bindClick('btn-restore', () => { const f = this.root.getElementById('file-upload'); if(f) f.click(); });
         const fileInput = this.root.getElementById('file-upload');
@@ -741,11 +845,18 @@ export class RadarEditor {
                 reader.onload = (ev) => {
                     try {
                         const json = JSON.parse(ev.target.result);
-                                if (confirm(this.t("unsaved") )) {
-                            state.hass.callService('radar_map_manager', 'import_config', { config_json: JSON.stringify(json) });
-                            setTimeout(() => { alert("Imported!"); location.reload(); }, 1000);
+                        if (confirm(this.t("confirm_restore"))) {
+                            state.hass.callService('radar_map_manager', 'import_config', {
+                                config_json: JSON.stringify(json),
+                                map_group: state.mapGroup || "default"
+                            }).then(() => {
+                                alert(this.t("restore_ok"));
+                                setTimeout(() => location.reload(), 800);
+                            }).catch((err) => {
+                                alert(this.t("ha_reject") + JSON.stringify(err));
+                            });
                         }
-                    } catch (err) { alert("Invalid JSON"); }
+                    } catch (err) { alert("Invalid JSON: " + (err.message || err)); }
                 };
                 reader.readAsText(file);
                 fileInput.value = '';

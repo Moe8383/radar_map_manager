@@ -43,6 +43,8 @@ class FusionEngine:
                 sy = float(layout.get('scale_y', 5.0))
                 map_scales.setdefault(map_group, []).append((sx + sy) / 2.0)
                 r_conf['targets'] = []
+                if r_conf.get("paused", False):
+                    continue
                 for i in range(1, 6):
                     raw_point = self._get_radar_point(r_name, i)
                     if not raw_point: continue

@@ -9,6 +9,7 @@ import voluptuous as vol
 import math
 import asyncio
 import aiohttp
+import socket
 from homeassistant.components import mqtt
 from datetime import timedelta
 from homeassistant.core import HomeAssistant, ServiceCall, callback
@@ -23,8 +24,57 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.config_entries import ConfigEntry
 from .coordinator import RadarCoordinator
 from .processor import RadarProcessor
-from .const import DOMAIN, CONF_RADARS
+from .const import (
+    DOMAIN,
+    CONF_RADARS,
+    CONF_UDP_PORT,
+    DEFAULT_UDP_PORT,
+    CONF_ENABLE_UDP,
+    DEFAULT_ENABLE_UDP,
+)
 _LOGGER = logging.getLogger(__name__)
+def _get_local_ip(target_ip=None):
+    """智能获取 Home Assistant 所在局域网的源 IP 地址 (用于下发给 ESP)."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect((target_ip or "8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
+class RMMDatagramProtocol(asyncio.DatagramProtocol):
+    """RMM 极速 UDP 数据报接收协议 (纯 RAM 高速通道)."""
+    def __init__(self, hass: HomeAssistant):
+        self.hass = hass
+        self.transport = None
+    def connection_made(self, transport):
+        self.transport = transport
+        _LOGGER.info("RMM: UDP 异步接收服务已就绪并开始监听。")
+    def datagram_received(self, data: bytes, addr):
+        try:
+            text = data.decode("utf-8", errors="ignore")
+            payload = json.loads(text)
+            r_name = payload.get("r") or payload.get("radar")
+            if not r_name:
+                return
+            coord = self.hass.data.get(DOMAIN, {}).get("coordinator")
+            if coord and coord.data and "radars" in coord.data:
+                r_conf = coord.data["radars"].get(r_name) or coord.data["radars"].get(r_name.lower())
+                if r_conf and r_conf.get("paused", False):
+                    return
+            count = payload.get("count", 0)
+            targets = payload.get("targets", payload.get("t", []))
+            self.hass.data[DOMAIN]["live_data"][r_name] = targets[:count]
+            self.hass.data[DOMAIN]["live_data"][r_name.lower()] = targets[:count]
+            self.hass.data[DOMAIN].setdefault("last_seen_udp", {})[r_name] = time.time()
+            self.hass.data[DOMAIN]["last_seen_udp"][r_name.lower()] = time.time()
+        except Exception as e:
+            _LOGGER.debug(f"RMM: UDP 数据报解析异常: {e}")
+    def error_received(self, exc):
+        _LOGGER.error(f"RMM: UDP 接收服务遇到错误: {exc}")
+    def connection_lost(self, exc):
+        _LOGGER.info("RMM: UDP 接收服务已停止监听。")
 BACKEND_I18N = {
     "basic_mode": {
         "zh": "📡 雷达 '{0}' 未提供配对码，已自动作为【基础开源模式】接入。",
@@ -53,6 +103,10 @@ ADD_RADAR_SCHEMA = vol.Schema({
     vol.Optional("radar_ip", default=""): cv.string,
 }, extra=vol.ALLOW_EXTRA)
 REMOVE_RADAR_SCHEMA = vol.Schema({vol.Required("radar_name"): cv.string})
+SET_RADAR_PAUSE_SCHEMA = vol.Schema({
+    vol.Required("radar_name"): cv.string,
+    vol.Required("paused"): cv.boolean,
+})
 UPDATE_ZONE_SCHEMA = vol.Schema({
     vol.Optional("radar_name"): vol.Any(cv.string, None),
     vol.Required("zone_type"): cv.string,
@@ -121,6 +175,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     hass.data[DOMAIN]["coordinator"] = coordinator
     hass.data[DOMAIN]["processor"] = processor
     hass.data[DOMAIN]["timer_remove"] = None
+    hass.data[DOMAIN]["last_seen_udp"] = {}
+    enable_udp = entry.options.get(CONF_ENABLE_UDP, DEFAULT_ENABLE_UDP)
+    udp_port = entry.options.get(CONF_UDP_PORT, DEFAULT_UDP_PORT)
+    hass.data[DOMAIN]["enable_udp"] = enable_udp
+    hass.data[DOMAIN]["udp_port"] = udp_port
+    if enable_udp:
+        try:
+            loop = asyncio.get_running_loop()
+            transport, protocol = await loop.create_datagram_endpoint(
+                lambda: RMMDatagramProtocol(hass),
+                local_addr=("0.0.0.0", udp_port),
+            )
+            hass.data[DOMAIN]["udp_transport"] = transport
+            _LOGGER.info(f"RMM: 成功启动 UDP 高频数据流监听服务 -> 0.0.0.0:{udp_port}")
+        except Exception as e:
+            _LOGGER.error(f"RMM: 无法绑定 UDP 端口 {udp_port}: {e}")
+    entry.async_on_unload(entry.add_update_listener(async_reload_entry))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     def start_processing_loop(interval_sec):
         if hass.data[DOMAIN]["timer_remove"]:
@@ -128,10 +199,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             hass.data[DOMAIN]["timer_remove"] = None
             _LOGGER.debug("RMM: Stopped previous update timer.")
         safe_interval = max(0.1, float(interval_sec))
+        async def _processing_tick(now_dt=None):
+            now_ts = time.time()
+            last_seen_udp = hass.data[DOMAIN].get("last_seen_udp", {})
+            live_data = hass.data[DOMAIN].get("live_data", {})
+            for r_k, last_ts in list(last_seen_udp.items()):
+                if now_ts - last_ts > 2.5:
+                    if r_k in live_data and len(live_data[r_k]) > 0:
+                        live_data[r_k] = []
+            await processor.update()
         _LOGGER.info(f"RMM: Starting processor loop with interval: {safe_interval}s")
         hass.data[DOMAIN]["timer_remove"] = async_track_time_interval(
             hass, 
-            processor.update, 
+            _processing_tick, 
             timedelta(seconds=safe_interval)
         )
     async def broadcast_hw_zones():
@@ -253,6 +333,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                     {"notification_id": f"rmm_auth_basic_{radar_name}"})
             )
         await processor.update(force=True)
+    async def handle_set_radar_pause(call: ServiceCall):
+        radar_name = call.data["radar_name"]
+        paused = call.data["paused"]
+        await coordinator.async_set_radar_pause(radar_name, paused)
+        if paused:
+            if radar_name in hass.data[DOMAIN].get("live_data", {}):
+                hass.data[DOMAIN]["live_data"][radar_name] = []
+            if radar_name.lower() in hass.data[DOMAIN].get("live_data", {}):
+                hass.data[DOMAIN]["live_data"][radar_name.lower()] = []
+            if radar_name in hass.data[DOMAIN].get("last_seen_udp", {}):
+                hass.data[DOMAIN]["last_seen_udp"].pop(radar_name, None)
+            if radar_name.lower() in hass.data[DOMAIN].get("last_seen_udp", {}):
+                hass.data[DOMAIN]["last_seen_udp"].pop(radar_name.lower(), None)
+        await processor.update(force=True)
     async def handle_update_radar_zone(call: ServiceCall):
         radar_name = call.data.get("radar_name")
         zone_type = call.data["zone_type"]
@@ -313,36 +407,58 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         await processor.update(force=True)
     async def handle_import_config(call: ServiceCall):
         try:
-            json_str = call.data["config_json"]
+            json_str = call.data.get("config_json") or call.data.get("json_str")
+            if not json_str:
+                raise ValueError("Missing config_json parameter")
+            target_map = call.data.get("map_group") or "default"
             new_data = json.loads(json_str)
-            if "radars" not in new_data and "maps" not in new_data:
-                _LOGGER.info("RMM: 检测到旧版备份文件，正在自动迁移为多户型 (default) 结构...")
-                migrated_data = {
-                    "radars": {},
-                    "maps": {
-                        "default": {
-                            "zones": new_data.get("global_zones", {}),
-                            "config": new_data.get("global_config", {})
-                        }
-                    },
-                }
+            new_data.pop("discovered_radars", None)
+            new_data.pop("_force_reset_history", None)
+            if "maps" in new_data or "radars" in new_data:
+                _LOGGER.info("RMM: 正在恢复全量多楼层配置...")
+                if "maps" not in new_data: new_data["maps"] = {}
+                if "radars" not in new_data: new_data["radars"] = {}
                 if "global_config" in new_data:
                     old_global = new_data.pop("global_config")
                     for m_id, m_data in new_data.get("maps", {}).items():
                         if "config" not in m_data: m_data["config"] = old_global.copy()
+                default_cfg = coordinator._get_empty_data()["maps"]["default"]["config"]
+                for m_id, m_data in new_data["maps"].items():
+                    if "zones" not in m_data:
+                        m_data["zones"] = {"include_zones": [], "exclude_zones": [], "entrance_zones": [], "stationary_zones": []}
+                    if "config" not in m_data:
+                        m_data["config"] = default_cfg.copy()
+                    m_data.pop("targets", None)
+                for r_name, r_conf in new_data["radars"].items():
+                    if isinstance(r_conf, dict) and not r_conf.get("map_group"):
+                        r_conf["map_group"] = "default"
+                coordinator.data = new_data
+            else:
+                _LOGGER.info(f"RMM: 检测到单楼层备份文件，正在智能合入至楼层 [{target_map}]...")
+                if "maps" not in coordinator.data: coordinator.data["maps"] = {}
+                if target_map not in coordinator.data["maps"]:
+                    coordinator.data["maps"][target_map] = {
+                        "zones": {"include_zones": [], "exclude_zones": [], "entrance_zones": [], "stationary_zones": []},
+                        "config": coordinator._get_empty_data()["maps"]["default"]["config"].copy()
+                    }
+                if "global_zones" in new_data:
+                    coordinator.data["maps"][target_map]["zones"] = new_data["global_zones"]
+                if "global_config" in new_data:
+                    if "config" not in coordinator.data["maps"][target_map]:
+                        coordinator.data["maps"][target_map]["config"] = {}
+                    coordinator.data["maps"][target_map]["config"].update(new_data["global_config"])
+                if "radars" not in coordinator.data: coordinator.data["radars"] = {}
                 for k, v in new_data.items():
-                    if k not in ["global_zones", "global_config", "maps", "radars"]:
-                        migrated_data["radars"][k] = v
-                new_data = migrated_data
-            if "radars" not in new_data or "maps" not in new_data:
-                raise ValueError("Invalid JSON format: missing radars or maps")
-            coordinator.data = new_data
+                    if k not in ["global_zones", "global_config", "maps", "radars"] and isinstance(v, dict):
+                        v["map_group"] = target_map
+                        coordinator.data["radars"][k] = v
             await coordinator.async_save()
             await broadcast_hw_zones()
             await broadcast_monitor_zones()
-            intervals = [m.get("config", {}).get("update_interval", 0.1) for m in new_data.get("maps", {}).values()]
+            intervals = [m.get("config", {}).get("update_interval", 0.1) for m in coordinator.data.get("maps", {}).values()]
             start_processing_loop(min(intervals) if intervals else 0.1)
             await processor.update(force=True)
+            _LOGGER.info("RMM: 配置恢复完成并已广播同步！")
         except Exception as e:
             _LOGGER.error(f"RMM: Import failed: {e}")
     async def handle_reset_history(call: ServiceCall):
@@ -351,6 +467,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         await processor.update(force=True)
     hass.services.async_register(DOMAIN, "add_radar", handle_add_radar, schema=ADD_RADAR_SCHEMA)
     hass.services.async_register(DOMAIN, "remove_radar", handle_remove_radar, schema=REMOVE_RADAR_SCHEMA)
+    hass.services.async_register(DOMAIN, "set_radar_pause", handle_set_radar_pause, schema=SET_RADAR_PAUSE_SCHEMA)
     hass.services.async_register(DOMAIN, "update_radar_zone", handle_update_radar_zone, schema=UPDATE_ZONE_SCHEMA)
     hass.services.async_register(DOMAIN, "update_radar_layout", handle_update_radar_layout, schema=UPDATE_LAYOUT_SCHEMA)
     hass.services.async_register(DOMAIN, "generate_radar_config", handle_generate_config)
@@ -401,6 +518,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                 challenge_payload = json.dumps({"nonce": nonce})
                 hass.async_create_task(mqtt.async_publish(hass, challenge_topic, challenge_payload))
                 _LOGGER.info(f"RMM: 被动心跳 Authentication challenge issued to {r_name}")
+                if hass.data[DOMAIN].get("enable_udp", True):
+                    r_ip = payload.get("ip", "")
+                    cur_ha_ip = _get_local_ip(r_ip)
+                    cur_udp_port = hass.data[DOMAIN].get("udp_port", DEFAULT_UDP_PORT)
+                    udp_cfg_topic = f"rmm_radar/{r_name}/udp_config"
+                    udp_cfg_payload = json.dumps({"ha_ip": cur_ha_ip, "udp_port": cur_udp_port})
+                    hass.async_create_task(mqtt.async_publish(hass, udp_cfg_topic, udp_cfg_payload, retain=True))
+                    _LOGGER.info(f"RMM: 已向雷达 '{r_name}' 下发 UDP 自动配置 -> {cur_ha_ip}:{cur_udp_port}")
         except Exception as e:
             _LOGGER.error(f"RMM: Failed to parse radar info: {e}")
     @callback
@@ -463,6 +588,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                         if coordinator.data["radars"][r_name].get("capabilities") != real_caps:
                             coordinator.data["radars"][r_name]["capabilities"] = real_caps
                             hass.async_create_task(coordinator.async_save())
+                        _LOGGER.info(f"RMM: 雷达 '{r_name}' 重启上线完成鉴权，正在自动同步下发最新区域配置...")
+                        hass.async_create_task(broadcast_hw_zones())
+                        hass.async_create_task(broadcast_monitor_zones())
                     hass.data[DOMAIN]["pending_auth"].pop(r_name, None)
                     coordinator._notify_listeners()
                 else:
@@ -498,12 +626,79 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         except Exception as e:
             _LOGGER.error(f"RMM: Failed to parse yaw_delta: {e}")
     @callback
+    async def async_on_auto_block_state(msg):
+        try:
+            payload = json.loads(msg.payload)
+            topic_parts = msg.topic.split('/')
+            if len(topic_parts) >= 3:
+                r_name = topic_parts[1]
+                state = payload.get("state")
+                if state == "COMPLETED" and "blocks" in payload:
+                    if "radars" in coordinator.data and r_name in coordinator.data["radars"]:
+                        r_conf = coordinator.data["radars"][r_name]
+                        layout = r_conf.get("layout", {})
+                        ox = float(layout.get('origin_x', 50)); oy = float(layout.get('origin_y', 50))
+                        sx = float(layout.get('scale_x', 5)); sy = float(layout.get('scale_y', 5))
+                        rot = float(layout.get('rotation', 0))
+                        base_rad = (rot - 90) * math.pi / 180.0
+                        y_vec_x = math.cos(base_rad); y_vec_y = math.sin(base_rad)
+                        x_vec_x = math.cos(base_rad + (math.pi / 2)); x_vec_y = math.sin(base_rad + (math.pi / 2))
+                        def to_canvas_pt(xm, ym):
+                            if layout.get('mirror_x', False):
+                                xm = -xm
+                            px = ox + (xm * sx * x_vec_x) + (ym * sy * y_vec_x)
+                            py = oy + (xm * sx * x_vec_y) + (ym * sy * y_vec_y)
+                            return [round(px, 2), round(py, 2)]
+                        blocks = payload["blocks"]
+                        existing_names = set()
+                        for r_k, r_v in coordinator.data.get("radars", {}).items():
+                            for z_type in ["hw_detect_zones", "hw_block_zones", "hw_stay_zones", "monitor_zones"]:
+                                for z in r_v.get(z_type, []):
+                                    if isinstance(z, dict) and "name" in z:
+                                        existing_names.add(z["name"].strip())
+                        for m_k, m_v in coordinator.data.get("maps", {}).items():
+                            for z_type in ["include_zones", "exclude_zones", "entrance_zones", "stationary_zones"]:
+                                for z in m_v.get("zones", {}).get(z_type, []):
+                                    if isinstance(z, dict) and "name" in z:
+                                        existing_names.add(z["name"].strip())
+                        hw_block_zones = []
+                        used_names = set(existing_names)
+                        for idx, b in enumerate(blocks):
+                            if len(b) >= 4:
+                                x1 = b[0] / 1000.0; y1 = b[1] / 1000.0
+                                x2 = b[2] / 1000.0; y2 = b[3] / 1000.0
+                                p1 = to_canvas_pt(x1, y1)
+                                p2 = to_canvas_pt(x2, y1)
+                                p3 = to_canvas_pt(x2, y2)
+                                p4 = to_canvas_pt(x1, y2)
+                                seq = idx + 1
+                                candidate_name = f"HW Block {seq}"
+                                while candidate_name in used_names:
+                                    seq += 1
+                                    candidate_name = f"HW Block {seq}"
+                                used_names.add(candidate_name)
+                                hw_block_zones.append({
+                                    "name": candidate_name,
+                                    "points": [p1, p2, p3, p4]
+                                })
+                        coordinator.data["radars"][r_name]["hw_block_zones"] = hw_block_zones
+                        _LOGGER.info(f"RMM: [AutoBlock] 自动识别排除区同步完成 (已去重命名): {r_name}, {len(hw_block_zones)} 个区域")
+                        await coordinator.async_save()
+                        await processor.update(force=True)
+                async_dispatcher_send(hass, "rmm_auto_block_event", {"radar": r_name, "payload": payload})
+        except Exception as e:
+            _LOGGER.error(f"RMM: Failed to parse auto_block_state: {e}")
+    @callback
     def on_radar_data(msg):
         try:
             payload = json.loads(msg.payload)
             topic_parts = msg.topic.split('/')
             if len(topic_parts) >= 3:
                 r_name = topic_parts[1]
+                if coordinator.data and "radars" in coordinator.data:
+                    r_conf = coordinator.data["radars"].get(r_name) or coordinator.data["radars"].get(r_name.lower())
+                    if r_conf and r_conf.get("paused", False):
+                        return
                 count = payload.get("count", 0)
                 targets = payload.get("targets", [])
                 hass.data[DOMAIN]["live_data"][r_name] = targets[:count]
@@ -589,7 +784,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                 connection.send_message(websocket_api.event_message(msg["id"], {"event": "closed"}))
         task = hass.async_create_task(forward_loop())
         connection.subscriptions[msg["id"]] = lambda: task.cancel() or hass.async_create_task(ws.close())
-    websocket_api.async_register_command(hass, websocket_subscribe_stream)
+    try:
+        websocket_api.async_register_command(hass, websocket_subscribe_stream)
+    except Exception:
+        pass
     @callback
     @websocket_api.websocket_command({
         vol.Required("type"): "rmm/stream",
@@ -601,9 +799,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         unsub = async_dispatcher_connect(hass, "rmm_stream_update", send_update)
         connection.subscriptions[msg["id"]] = unsub
         connection.send_result(msg["id"])
-    websocket_api.async_register_command(hass, websocket_global_stream)
+    try:
+        websocket_api.async_register_command(hass, websocket_global_stream)
+    except Exception:
+        pass
     await processor.async_start()
-    async def initial_startup(event):
+    async def initial_startup(event=None):
         min_interval = 0.1
         if coordinator.data and "maps" in coordinator.data:
             intervals = [m.get("config", {}).get("update_interval", 0.1) for m in coordinator.data["maps"].values()]
@@ -616,17 +817,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             await mqtt.async_subscribe(hass, "rmm_radar/+/auth/response", async_on_auth_response)
             await mqtt.async_subscribe(hass, "rmm_radar/+/data", on_radar_data)
             await mqtt.async_subscribe(hass, "rmm_radar/+/yaw_delta/state", async_on_yaw_delta)
+            await mqtt.async_subscribe(hass, "rmm_radar/+/auto_block/state", async_on_auto_block_state)
             await mqtt.async_subscribe(hass, "rmm_radar/+/availability", on_radar_availability)
             _LOGGER.info("RMM: Successfully subscribed to info and auth topics")
         except Exception as e:
             _LOGGER.error(f"RMM: Failed to subscribe to info topic: {e}")
-    hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, initial_startup)
+    if hass.is_running:
+        hass.async_create_task(initial_startup(None))
+    else:
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, initial_startup)
     return True
+async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry):
+    """当用户在选项面板修改设置后热重载集成."""
+    await hass.config_entries.async_reload(entry.entry_id)
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     """当用户从 UI 卸载集成时执行清理."""
     if hass.data[DOMAIN].get("timer_remove"):
         hass.data[DOMAIN]["timer_remove"]()
+    if "udp_transport" in hass.data.get(DOMAIN, {}):
+        transport = hass.data[DOMAIN].pop("udp_transport", None)
+        if transport:
+            transport.close()
+            _LOGGER.info("RMM: UDP 监听服务已安全关闭。")
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        hass.data.pop(DOMAIN)
+        hass.data.pop(DOMAIN, None)
     return unload_ok

@@ -10,6 +10,18 @@
       "single_instance_allowed": "Radar Map Manager is already configured. Only a single instance is needed."
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "RMM Communication & UDP Settings",
+        "description": "Configure the UDP high-speed stream receiver for RMM radar target coordinates and point clouds.",
+        "data": {
+          "enable_udp": "Enable UDP High-Speed Listener",
+          "udp_port": "UDP Listening Port (Default 18888)"
+        }
+      }
+    }
+  },
   "entity": {
     "sensor": {
       "presence_target_count": {"name": "Target Count"},

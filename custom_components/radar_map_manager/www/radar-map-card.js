@@ -1,7 +1,7 @@
-import { RadarMath } from './radar-math.js?v=1.1.3';
-import { RadarUI } from './radar-ui.js?v=1.1.3';
-import { RadarRenderer } from './radar-renderer.js?v=1.1.3'; 
-import { RadarEditor } from './radar-editor.js?v=1.1.3';
+import { RadarMath } from './radar-math.js?v=1.1.5';
+import { RadarUI } from './radar-ui.js?v=1.1.5';
+import { RadarRenderer } from './radar-renderer.js?v=1.1.5'; 
+import { RadarEditor } from './radar-editor.js?v=1.1.5';
 const CARD_I18N = {
     "proxy_ok": { "zh": "[RMM VIP] 雷达 {0} 代理认证成功！专属高频点云已通过 HA 隧道激活。", "en": "[RMM VIP] Radar {0} proxy auth successful! Exclusive high-frequency point cloud activated via HA tunnel." },
     "proxy_fail": { "zh": "[RMM VIP] 代理中继连接失败 ({0})，已静默降级为 MQTT 模式。", "en": "[RMM VIP] Proxy relay connection failed ({0}), silently downgraded to MQTT mode." }
@@ -157,6 +157,70 @@ class RadarMapCardNative extends HTMLElement {
             }
         }
     }
+    showAutoBlockProgress(totalSec) {
+        let hud = this.shadowRoot.getElementById('autoblock-hud');
+        if (!hud) {
+            hud = document.createElement('div');
+            hud.id = 'autoblock-hud';
+            hud.style.cssText = `
+                position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+                background: rgba(20, 20, 20, 0.94); border: 1px solid #1976D2; border-radius: 6px;
+                padding: 6px 14px; color: #fff; z-index: 100; box-shadow: 0 4px 14px rgba(0,0,0,0.7);
+                display: flex; flex-direction: column; align-items: center; gap: 5px; font-size: 11px;
+                font-family: sans-serif; pointer-events: none; transition: opacity 0.4s ease;
+            `;
+            hud.innerHTML = `
+                <div id="autoblock-hud-text" style="font-weight: bold; color: #64B5F6; white-space: nowrap;"></div>
+                <div style="width: 160px; height: 5px; background: #333; border-radius: 3px; overflow: hidden;">
+                    <div id="autoblock-hud-bar" style="width: 0%; height: 100%; background: #1976D2; transition: width 0.3s linear;"></div>
+                </div>
+            `;
+            const rootEl = this.shadowRoot.getElementById('root');
+            if (rootEl) rootEl.appendChild(hud);
+        }
+        hud.style.opacity = '1';
+        hud.style.display = 'flex';
+        const txtEl = hud.querySelector('#autoblock-hud-text');
+        const barEl = hud.querySelector('#autoblock-hud-bar');
+        const lang = (this.state.hass && this.state.hass.language) || 'en';
+        const isZh = lang.startsWith('zh');
+        let remaining = totalSec;
+        const updateHUD = () => {
+            if (txtEl) {
+                txtEl.innerText = isZh 
+                    ? `⏳ 正在识别环境噪点... ${remaining}s (请保持静止)`
+                    : `⏳ Scanning noise... ${remaining}s (Stay clear)`;
+            }
+            if (barEl) {
+                const percent = Math.min(100, Math.round(((totalSec - remaining) / totalSec) * 100));
+                barEl.style.width = `${percent}%`;
+                barEl.style.background = '#1976D2';
+            }
+        };
+        updateHUD();
+        if (this._autoBlockTimer) clearInterval(this._autoBlockTimer);
+        this._autoBlockTimer = setInterval(() => {
+            remaining--;
+            if (remaining > 0) {
+                updateHUD();
+            } else {
+                clearInterval(this._autoBlockTimer);
+                this._autoBlockTimer = null;
+                if (txtEl) {
+                    txtEl.innerText = isZh ? "✅ 自动识别完成！正在同步生成排除区..." : "✅ Auto Learn completed! Syncing...";
+                    txtEl.style.color = "#4CAF50";
+                }
+                if (barEl) {
+                    barEl.style.width = '100%';
+                    barEl.style.background = '#4CAF50';
+                }
+                setTimeout(() => {
+                    if (hud) hud.style.opacity = '0';
+                    setTimeout(() => { if (hud) hud.style.display = 'none'; }, 400);
+                }, 2500);
+            }
+        }, 1000);
+    }
     fetchData(force = false) {
         if (force) {
             this.state.hasUnsavedChanges = false;
@@ -229,6 +293,17 @@ class RadarMapCardNative extends HTMLElement {
                     conn.nextRetry = Date.now() + backoff;
                 } else if (data.raw) {
                     try {
+                        const isPaused = (this.state.data && this.state.data[rName] && this.state.data[rName].paused === true);
+                        if (isPaused) {
+                            this.state.wsTargets[rName].targets = [];
+                            this.state.wsTargets[rName].connected = true;
+                            if (this.renderer.activePointCloud && this.renderer.activePointCloud.rName === rName) {
+                                this.renderer.activePointCloud = null;
+                            }
+                            this.state.hass = this.getMockHass(this.state.rawHass);
+                            requestAnimationFrame(() => this.renderer.draw(this.state, this.config, this.state.hass));
+                            return;
+                        }
                         const parsed = JSON.parse(data.raw);
                         if (Array.isArray(parsed)) {
                             this.state.wsTargets[rName].targets = parsed;
@@ -299,7 +374,9 @@ class RadarMapCardNative extends HTMLElement {
             if (['global_zones', 'global_config', 'fused_targets'].includes(rName)) continue;
             let wsData = this.state.wsTargets && this.state.wsTargets[rName];
             let sourceTargets = [];
-            if (wsData && wsData.connected) {
+            if (rConf.paused === true) {
+                sourceTargets = [];
+            } else if (wsData && wsData.connected) {
                 sourceTargets = wsData.targets || [];
                 anyWsConnected = true;
             } else {

@@ -84,12 +84,17 @@ class RadarCoordinator:
         if name in self.data["radars"]: return
         self.data["radars"][name] = {
             "map_group": map_group,
+            "paused": False,
             "layout": {"origin_x": 50, "origin_y": 50, "scale_x": 5, "scale_y": 5, "rotation": 0},
             "monitor_zones": []
         }
         if map_group not in self.data["maps"]:
             self.data["maps"][map_group] = {"zones": {"include_zones": [], "exclude_zones": []}, "config": self._get_empty_data()["maps"]["default"]["config"].copy()}
         await self.async_save()
+    async def async_set_radar_pause(self, radar_name, paused):
+        if radar_name in self.data["radars"]:
+            self.data["radars"][radar_name]["paused"] = bool(paused)
+            await self.async_save()
     async def async_remove_radar(self, name):
         if name in self.data["radars"]:
             del self.data["radars"][name]
