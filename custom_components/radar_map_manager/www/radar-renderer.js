@@ -65,15 +65,12 @@ export class RadarRenderer {
             this.canvas.height = rh;
         }
         if (rw === 0 || rh === 0) return;
+        const targetDefColors = ['#00FF00', '#FF0000', '#00FFFF', '#FF00FF', '#FFFF00', '#FFA500', '#00E5FF'];
+        const userColors = this.currentConfig.target_colors || [];
         const allRadars = this._getAllRadars(this.currentState, this.currentConfig, this.currentHass);
         const rIndex = allRadars.findIndex(r => r.name === rName);
-        const defColors = ['#00FF00', '#FF0000', '#00FFFF', '#FF00FF', '#FFFF00'];
-        const userColors = this.currentConfig.target_colors || [];
         const globalConfig = (this.currentState.data && this.currentState.data.global_config) || {};
-        const ptColor = userColors[rIndex] || defColors[rIndex % defColors.length] || globalConfig.fused_color || '#00e5ff';
-        this.ctx.fillStyle = ptColor;
-        this.ctx.shadowColor = ptColor;
-        this.ctx.shadowBlur = 4;
+        const baseRadarColor = userColors[rIndex] || targetDefColors[rIndex % targetDefColors.length] || globalConfig.fused_color || '#00e5ff';
         const rot = parseFloat(cfg.rotation) || 0;
         const baseRad = (rot - 90) * Math.PI / 180.0;
         const yVecX = Math.cos(baseRad);
@@ -89,23 +86,27 @@ export class RadarRenderer {
         const targetH = parseFloat(cfg.target_height) || 1.2;
         const hDiff = Math.abs(radarH - targetH);
         const hDiffSq = hDiff * hDiff;
-        this.ctx.beginPath(); 
         let isFlat = points.length > 0 && typeof points[0] === 'number';
         let step = 1;
         if (isFlat) {
-            if (points.length % 3 === 0 && points.length % 2 !== 0) step = 3; 
+            if (points.length % 4 === 0) step = 4;
+            else if (points.length % 3 === 0 && points.length % 2 !== 0) step = 3; 
             else if (points.length % 2 === 0) step = 2; 
-            else step = 3; 
+            else step = 4;
         }
+        const colorBatches = {};
         for (let i = 0; i < points.length; i += step) {
             let pt = points[i];
             let pX = 0, pY = 0;
+            let clusterId = 0;
             if (isFlat) {
                 pX = points[i];
                 pY = points[i+1];
+                if (step >= 4) clusterId = points[i+3] || 0;
             } else {
                 pX = pt[0] !== undefined ? pt[0] : (pt.x || 0);
                 pY = pt[1] !== undefined ? pt[1] : (pt.y || 0);
+                clusterId = pt[3] !== undefined ? pt[3] : (pt.id || 0);
             }
             let xVal = (Math.abs(pX) > 50 || Math.abs(pY) > 50) ? pX / 1000.0 : pX;
             let yVal = (Math.abs(pX) > 50 || Math.abs(pY) > 50) ? pY / 1000.0 : pY;
@@ -126,9 +127,28 @@ export class RadarRenderer {
             let finalY = oy + (xVal * sx * xVecY) + (yVal * sy * yVecY);
             let pixelX = (finalX / 100) * rect.width;
             let pixelY = (finalY / 100) * rect.height;
-            this.ctx.rect(pixelX - 1.5, pixelY - 1.5, 3, 3); 
+            let ptColor;
+            if (clusterId > 0) {
+                const cIdx = clusterId - 1;
+                ptColor = userColors[cIdx] || targetDefColors[cIdx % targetDefColors.length] || '#00e5ff';
+            } else {
+                ptColor = baseRadarColor;
+            }
+            if (!colorBatches[ptColor]) {
+                colorBatches[ptColor] = [];
+            }
+            colorBatches[ptColor].push(pixelX, pixelY);
         }
-        this.ctx.fill();
+        for (const [color, coords] of Object.entries(colorBatches)) {
+            this.ctx.fillStyle = color;
+            this.ctx.shadowColor = color;
+            this.ctx.shadowBlur = 4;
+            this.ctx.beginPath();
+            for (let j = 0; j < coords.length; j += 2) {
+                this.ctx.rect(coords[j] - 1.5, coords[j + 1] - 1.5, 3, 3);
+            }
+            this.ctx.fill();
+        }
     }
     getRadarConfig(state, rName, hass) {
         const getVal = (key, def) => {
