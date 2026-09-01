@@ -2,9 +2,19 @@
 
 ![Logo](logo.png)
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
+[![HACS Default](https://img.shields.io/badge/HACS-Default-orange.svg)](https://github.com/hacs/default)
+[![GitHub Release](https://img.shields.io/github/v/release/Moe8383/radar_map_manager?label=version&color=007ec6)](https://github.com/Moe8383/radar_map_manager/releases)
+[![GitHub Downloads](https://img.shields.io/github/downloads/Moe8383/radar_map_manager/total?label=downloads&color=brightgreen)](https://github.com/Moe8383/radar_map_manager/releases)
+[![GitHub Stars](https://img.shields.io/github/stars/Moe8383/radar_map_manager?logo=github&color=blue)](https://github.com/Moe8383/radar_map_manager/stargazers)
+[![GitHub Issues](https://img.shields.io/github/issues/Moe8383/radar_map_manager?color=yellow)](https://github.com/Moe8383/radar_map_manager/issues)
 
-> 🇺🇸 English Documentation | 🇨🇳 [中文文档](README_zh.md)
+[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-%3E%3D%202024.1.0-blue?logo=homeassistant)](https://www.home-assistant.io/)
+[![IoT Class](https://img.shields.io/badge/IoT%20Class-Local%20Polling-brightgreen)](https://www.home-assistant.io/blog/2016/02/12/classifying-the-internet-of-things/)
+[![License](https://img.shields.io/github/license/Moe8383/radar_map_manager?color=blue)](LICENSE)
+[![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://github.com/Moe8383/radar_map_manager/graphs/commit-activity)
+
+
+> 🇺🇸 English | 🇨🇳 [简体中文](README_zh.md)
 
 **Radar Map Manager (RMM)** is a millimeter-wave radar visualization and data fusion integration built specifically for Home Assistant.
 
