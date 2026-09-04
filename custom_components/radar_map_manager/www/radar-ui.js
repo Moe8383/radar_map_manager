@@ -109,7 +109,7 @@ export class RadarUI {
             .tabs button.active { background: #1976D2; color: white; border-color: #1976D2; }
             .content { display: flex; flex-direction: column; gap: 3px; }
             .hidden { display: none !important; }
-            .row { display: flex; align-items: center; gap: 3px; margin-bottom: 2px; }
+            .row { display: flex; align-items: center; gap: 3px; margin-bottom: 2px; width: 100%; box-sizing: border-box; }
             .row label { color: #aaa; width: auto; text-align: right; margin-right: 1px; font-size: 9px; flex-shrink: 0; }
             .chk-label { display: flex; align-items: center; padding: 2px 4px; border: 1px solid #333; border-radius: 3px; background: #222; cursor: pointer; white-space: nowrap; }
             .chk-label:hover { background: #333; }
@@ -118,7 +118,7 @@ export class RadarUI {
             input[type="number"], input[type="text"], select { background: #111; border: 1px solid #333; color: white; padding: 1px 3px; border-radius: 2px; flex: 1; min-width: 0; font-size: 10px; height: 18px; }
             input[type="color"] { padding: 0; border: none; height: 20px; background: none; }
             select { height: 22px; padding: 0px 2px; cursor: pointer; }
-            #sel-radar { max-width: 110px; text-overflow: ellipsis; }
+            #sel-radar { min-width: 0; text-overflow: ellipsis; }
             .slider-row { display: flex; align-items: center; gap: 1px; flex: 1; min-width: 0; }
             .slider { flex: 1; accent-color: #1976D2; height: 2px; margin: 0 2px; cursor: pointer; min-width: 20px; }
             .stepper { width: 20px; height: 18px; padding: 0; background: #333; border: 1px solid #555; color: white; border-radius: 2px; cursor: pointer; font-size: 12px; line-height: 16px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
@@ -134,6 +134,7 @@ export class RadarUI {
             button.success { background: #2E7D32 !important; border-color: #1B5E20 !important; color: white !important; }
             button.warning { background: #F57F17 !important; border-color: #E65100 !important; color: black !important; }
             button.danger { background: #C62828 !important; border-color: #B71C1c !important; color: white !important; }
+            button.info { background: #00838F !important; border-color: #006064 !important; color: white !important; }
             .point-editor { background: #1a1a1a; padding: 2px; border-radius: 2px; opacity: 0.5; pointer-events: none; border: 1px solid #333; }
             .scroll-area { max-height: 110px; overflow-y: auto; overflow-x: hidden; padding-right: 2px; margin-right: -2px; }
             .scroll-area > * { flex-shrink: 0; } 
@@ -172,11 +173,13 @@ export class RadarUI {
                     </div>
                     <div id="layout-tools" class="content">
 						<div id="layout-header-row" class="row" style="margin-bottom: 3px;">
-                            <select id="sel-radar" style="flex:1; width:auto; min-width:0;"></select>
-                            <button id="btn-add-radar" class="success" title="Add Radar" style="width:20px; padding:0;">+</button>
-                            <button id="btn-edit-radar" class="primary" title="Edit Radar Params" style="width:20px; padding:0; margin-left:2px;">✎</button>
-                            <button id="btn-pause-radar" title="Pause Radar" style="width:20px; padding:0; margin-left:2px; background:#4CAF50; color:white; border:none; border-radius:3px; cursor:pointer; font-size:10px;">⏸</button>
-                            <button id="btn-del-radar" class="danger" title="Del Radar" style="width:20px; padding:0; margin-left:2px;">-</button>
+                            <select id="sel-radar" style="flex:1; min-width:0; height:22px;"></select>
+                            <div style="display:flex; align-items:center; gap:2px; margin-left:auto; flex-shrink:0;">
+                                <button id="btn-add-radar" class="success" title="Add Radar" style="width:22px; height:22px; padding:0; font-size:11px;">+</button>
+                                <button id="btn-edit-radar" class="primary" title="Edit Radar Params" style="width:22px; height:22px; padding:0; font-size:11px;">✎</button>
+                                <button id="btn-pause-radar" title="Pause Radar" style="width:22px; height:22px; padding:0; background:#4CAF50; color:white; border:none; border-radius:3px; cursor:pointer; font-size:10px;">⏸</button>
+                                <button id="btn-del-radar" class="danger" title="Del Radar" style="width:22px; height:22px; padding:0; font-size:11px;">-</button>
+                            </div>
                         </div>
                         <div class="row" style="margin-bottom: 4px;">
                             <select id="sel-radar-zone-type" style="flex:1; min-width:0; height:22px; background:#222; color:white; border:1px solid #444;">
@@ -185,8 +188,12 @@ export class RadarUI {
                                 <option value="hw_block_zones">🟥 HW Block</option>
                                 <option value="hw_stay_zones">🟪 HW Stay</option>
                             </select>
-                            <button id="btn-edit-fov" class="warning" style="width:26px; margin-left:2px; height:22px;" title="Draw Region">✏️</button>
-                            <button id="btn-auto-block" class="primary" style="display:none; width:auto; padding:0 6px; margin-left:2px; height:22px; font-size:10px; font-weight:bold; background:#1976D2; color:white; border:none; border-radius:3px; cursor:pointer;" title="Auto Learn Block Zones">🪄 Auto</button>
+                            <div style="display:flex; align-items:center; gap:2px; margin-left:auto; flex-shrink:0;">
+                                <button id="btn-auto-block" class="primary" style="display:none; width:auto; padding:0 6px; height:22px; font-size:10px; font-weight:bold; background:#1976D2; color:white; border:none; border-radius:3px; cursor:pointer;" title="Auto Learn Block Zones">🪄 Auto</button>
+                                <button id="btn-edit-fov" class="warning" style="width:22px; height:22px; padding:0; font-size:11px;" title="Draw Region">✏️</button>
+                                <button id="btn-radar-web" class="info" style="display:none; width:22px; height:22px; padding:0; font-size:11px;" title="访问雷达 Web 控制台">🌐</button>
+                                <button id="btn-radar-ota" class="primary" style="display:none; position:relative; width:22px; height:22px; padding:0; font-size:11px;" title="尝试升级 RMM 硬件固件">☁️</button>
+                            </div>
                         </div>
                         <div id="layout-inner-params">
                             <div class="row">
@@ -212,19 +219,19 @@ export class RadarUI {
                                     <button class="calc-btn" id="btn-calc-ay" title="Calc Y from X">Ay</button>
                                 </div>
                             </div>
-                            <div class="row" style="justify-content: space-between;">
-                                <div style="display:flex; gap:8px;">
-                                    <label class="chk-label"><input type="checkbox" id="layout-ceiling"><span>Ceiling</span></label>
-                                    <label class="chk-label"><input type="checkbox" id="layout-mirror"><span>Mirror</span></label>
-                                    <select id="layout-radar-type" style="width:50px; background:#222; color:white; border:1px solid #333; border-radius:3px; padding:0 2px; height:18px; cursor:pointer;" title="Radar Dimension Type">
+                            <div class="row" style="justify-content: space-between; align-items: center; gap: 3px;">
+                                <div style="display:flex; align-items: center; gap:4px; flex-shrink: 0;">
+                                    <label class="chk-label" style="height:22px; box-sizing:border-box; padding:0 4px;"><input type="checkbox" id="layout-ceiling"><span>Ceiling</span></label>
+                                    <label class="chk-label" style="height:22px; box-sizing:border-box; padding:0 4px;"><input type="checkbox" id="layout-mirror"><span>Mirror</span></label>
+                                    <select id="layout-radar-type" style="width:44px; height:22px; box-sizing:border-box; background:#222; color:white; border:1px solid #333; border-radius:3px; padding:0 2px; font-size:10px; cursor:pointer;" title="Radar Dimension Type">
                                         <option value="1">2D</option>
                                         <option value="2">2.5D</option>
                                         <option value="3">3D</option>
                                     </select>
                                 </div>
-                                <div id="group-height" style="display:flex; align-items:center;">
-                                    <label style="width:auto; margin-right:4px;">H</label>
-                                    <input type="number" id="layout-h" step="0.1" style="width:30px">
+                                <div id="group-height" style="display:flex; align-items:center; height:22px; flex-shrink: 0;">
+                                    <label style="width:auto; margin-right:2px; font-size:9px;">H</label>
+                                    <input type="number" id="layout-h" step="0.1" style="width:28px; height:22px; box-sizing:border-box; padding:0 2px; text-align:center;">
                                 </div>
                             </div>
                             <div class="row" id="row-point-cloud" style="display:none; justify-content: flex-end; margin-top: 4px;">
@@ -471,6 +478,8 @@ export class RadarUI {
             active(bLayout, true);
             const innerParams = this.root.getElementById('layout-inner-params');
             const btnFov = this.root.getElementById('btn-edit-fov');
+            const btnWeb = this.root.getElementById('btn-radar-web');
+            const btnOta = this.root.getElementById('btn-radar-ota');
             const selRadar = this.root.getElementById('sel-radar');
             const btnAdd = this.root.getElementById('btn-add-radar');
             const btnEdit = this.root.getElementById('btn-edit-radar');
@@ -486,6 +495,8 @@ export class RadarUI {
                     selType.value = state.radar_zone_type || 'monitor_zones'; 
                 }
                 if(btnFov) { btnFov.innerText = "✔"; btnFov.className = "success"; }
+                if(btnWeb) btnWeb.disabled = true;
+                if(btnOta) btnOta.disabled = true;
                 if(selRadar) selRadar.disabled = true;
                 if(btnAdd) btnAdd.disabled = true;
                 if(btnEdit) btnEdit.disabled = true;
@@ -496,6 +507,8 @@ export class RadarUI {
             } else {
                 if(innerParams) innerParams.style.display = 'block';
                 if(btnFov) { btnFov.innerText = "✏️"; btnFov.className = "warning"; }
+                if(btnWeb) btnWeb.disabled = false;
+                if(btnOta) btnOta.disabled = false;
                 if(selRadar) selRadar.disabled = false;
                 if(btnAdd) btnAdd.disabled = false;
                 if(btnEdit) btnEdit.disabled = false;
@@ -967,6 +980,61 @@ export class RadarUI {
                     btnPause.innerText = '⏸';
                     btnPause.style.background = '#4CAF50';
                     btnPause.title = isZh ? `雷达 ${rName} 运行中 (点击暂停)` : `Radar ${rName} Running (Click to Pause)`;
+                }
+            }
+        }
+        const btnWeb = this.root.getElementById('btn-radar-web');
+        const btnOta = this.root.getElementById('btn-radar-ota');
+        const isZh = (hass && hass.language && hass.language.startsWith('zh'));
+        const rData = state.data && state.data[rName];
+        const isExclusiveRadar = !!(rData && (rData.capabilities || rData.device_pin || rData.radar_ip));
+        if (btnWeb) {
+            btnWeb.style.display = isExclusiveRadar ? 'inline-flex' : 'none';
+            if (isExclusiveRadar) {
+                let ip = (rData && (rData.radar_ip || rData.ip)) ? (rData.radar_ip || rData.ip).trim() : '';
+                if (!ip && hass && hass.devices) {
+                    const rLower = rName.toLowerCase();
+                    for (const dev of Object.values(hass.devices)) {
+                        const matchName = (dev.name && dev.name.toLowerCase() === rLower) ||
+                                          (dev.name_by_user && dev.name_by_user.toLowerCase() === rLower);
+                        const matchId = dev.identifiers && dev.identifiers.some(ids => Array.isArray(ids) && ids.some(id => String(id).toLowerCase().includes(rLower)));
+                        if ((matchName || matchId) && dev.configuration_url) {
+                            const m = dev.configuration_url.match(/https?:\/\/([^/:]+)/);
+                            if (m) { ip = m[1]; break; }
+                        }
+                    }
+                }
+                const displayHost = ip || `${rName}.local`;
+                btnWeb.title = isZh
+                    ? `打开雷达 Web 控制台 (http://${displayHost.replace(/:81$/, '')})`
+                    : `Open Radar Web Console (http://${displayHost.replace(/:81$/, '')})`;
+            }
+        }
+        if (btnOta) {
+            btnOta.style.display = isExclusiveRadar ? 'inline-flex' : 'none';
+            if (isExclusiveRadar) {
+                let safeName = rName.toLowerCase().replace(/ /g, "_").replace(/-/g, "_");
+                let updateEntId = `update.${safeName}_firmware`;
+                if (hass && !hass.states[updateEntId]) {
+                    const found = Object.keys(hass.states).find(k => k.startsWith(`update.${safeName}`) && k.includes('firmware'));
+                    if (found) updateEntId = found;
+                }
+                const updateEnt = hass && hass.states[updateEntId];
+                if (updateEnt && updateEnt.state === 'on') {
+                    btnOta.style.background = '#FF9800'; 
+                    const curVer = updateEnt.attributes?.installed_version || '';
+                    const newVer = updateEnt.attributes?.latest_version || '';
+                    btnOta.title = isZh 
+                        ? `🚀 发现新固件！当前: ${curVer}, 最新: ${newVer} (点击升级)`
+                        : `🚀 New Firmware! Current: ${curVer}, Latest: ${newVer} (Click to Upgrade)`;
+                    btnOta.innerHTML = '⬆️<span style="position:absolute;top:-2px;right:-2px;width:6px;height:6px;background:#ff1744;border-radius:50%;"></span>';
+                } else {
+                    btnOta.style.background = '#1976D2';
+                    const curVer = updateEnt ? (updateEnt.attributes?.installed_version || '') : '';
+                    btnOta.title = isZh
+                        ? (curVer ? `固件已是最新 (${curVer})，点击可检查或重新升级` : "检查并升级 RMM 雷达固件 (Cloud OTA)")
+                        : (curVer ? `Firmware Up to Date (${curVer}), click to check/upgrade` : "Check & Upgrade Radar Firmware (Cloud OTA)");
+                    btnOta.innerHTML = '☁️';
                 }
             }
         }

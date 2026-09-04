@@ -10,6 +10,15 @@ const EDITOR_I18N = {
     "modal_not_found": { "zh": "🔍 未自动嗅探到新雷达实体，请手动输入名称。", "en": "🔍 No new radar entity automatically sniffed, please enter name manually." },
     "modal_lbl_name": { "zh": "雷达设备名称 (小写英文/数字/下划线):", "en": "Radar Name (lowercase/numbers/underscores):" },
     "modal_lbl_pin": { "zh": "🔑 专属 8 位配对码 (非RMM专属雷达留空):", "en": "🔑 Exclusive 8-digit PIN (only for RMM exclusive radar):" },
+    "pair_box_title": { "zh": "⚡ 极速按键配对 (推荐)", "en": "⚡ Fast Button Pairing (Recommended)" },
+    "pair_box_desc": { "zh": "点击开启后，60 秒内双击雷达实体按键即可自动完成配对。", "en": "After starting, double-click the physical button on the radar within 60s to pair." },
+    "pair_btn_start": { "zh": "⚡ 开启按键配对 (60s)", "en": "⚡ Start Button Pairing (60s)" },
+    "pair_btn_waiting": { "zh": "⏳ 等待按键双击 ({0}s)...", "en": "⏳ Waiting for double click ({0}s)..." },
+    "pair_btn_cancel": { "zh": "✕ 取消", "en": "✕ Cancel" },
+    "pair_btn_timeout": { "zh": "⏱️ 配对超时，点击重试", "en": "⏱️ Pairing timed out, click to retry" },
+    "pair_btn_success": { "zh": "✅ 硬件双击配对成功！", "en": "✅ Hardware Pairing Succeeded!" },
+    "pair_badge_success": { "zh": "已自动获取配对码", "en": "PIN code acquired" },
+    "pair_manual_hint": { "zh": "(亦可在此手动输入)", "en": "(or enter manually below)" },
     "modal_lbl_ip": { "zh": "🌐 雷达 IP 地址 (可选，.local 无法解析时必填):", "en": "🌐 Radar IP (optional, required if .local fails):" },
     "modal_btn_cancel": { "zh": "取消", "en": "Cancel" },
     "modal_btn_confirm": { "zh": "确定", "en": "Confirm" },
@@ -360,8 +369,20 @@ export class RadarEditor {
                 defaultName = state.radar;
                 const rConf = state.data[state.radar] || {};
                 defaultPin = rConf.device_pin || "";
-                defaultIp = rConf.radar_ip || "";
+                defaultIp = rConf.radar_ip || rConf.ip || "";
                 titleKey = "modal_edit_title";
+                if (!defaultIp && state.hass && state.hass.devices) {
+                    const rLower = state.radar.toLowerCase();
+                    for (const dev of Object.values(state.hass.devices)) {
+                        const matchName = (dev.name && dev.name.toLowerCase() === rLower) ||
+                                          (dev.name_by_user && dev.name_by_user.toLowerCase() === rLower);
+                        const matchId = dev.identifiers && dev.identifiers.some(ids => Array.isArray(ids) && ids.some(id => String(id).toLowerCase().includes(rLower)));
+                        if ((matchName || matchId) && dev.configuration_url) {
+                            const m = dev.configuration_url.match(/https?:\/\/([^/:]+)/);
+                            if (m) { defaultIp = m[1]; break; }
+                        }
+                    }
+                }
             }
             const existingRadars = Object.keys(state.data || {}).filter(k => !['global_zones', 'global_config', 'fused_targets'].includes(k));
             const discovered = [];
@@ -370,7 +391,8 @@ export class RadarEditor {
                     if (!existingRadars.includes(rName)) {
                         let model = caps.model || "Unknown";
                         let mac = caps.mac ? ` - ${caps.mac}` : "";
-                        discovered.push({ name: rName, label: `${rName} <span style="font-size:11px;opacity:0.7;font-weight:normal;">(${model}${mac})</span>` });
+                        let ip = caps.ip ? ` - ${caps.ip}` : "";
+                        discovered.push({ name: rName, ip: caps.ip || "", label: `${rName} <span style="font-size:11px;opacity:0.7;font-weight:normal;">(${model}${mac}${ip})</span>` });
                     }
                 });
             }
@@ -408,7 +430,21 @@ export class RadarEditor {
             html += `
                 <label style="display:block; font-size:13px; font-weight:bold; margin-bottom:5px;">${this.t('modal_lbl_name')}</label>
                 <input type="text" id="rmm-input-name" value="${defaultName}" ${isEdit ? 'disabled' : ''} placeholder="例如: living_room" style="width:100%; box-sizing:border-box; padding:10px; border:1px solid var(--divider-color, #ccc); border-radius:6px; margin-bottom:15px; background:var(--secondary-background-color, #fafafa); color:var(--primary-text-color, #333); font-size:14px; outline:none; ${isEdit ? 'opacity:0.6; cursor:not-allowed;' : ''}">
-                <label style="display:block; font-size:13px; font-weight:bold; margin-bottom:5px;">${this.t('modal_lbl_pin')}</label>
+                <!-- ⚡ 极速按键配对卡片 -->
+                <div style="background:var(--secondary-background-color, #f5f5f5); border:1px solid var(--divider-color, #e0e0e0); border-radius:8px; padding:12px; margin-bottom:15px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                        <span style="font-size:13px; font-weight:bold; color:var(--primary-text-color, #333);">${this.t('pair_box_title')}</span>
+                        <span id="rmm-pair-status-badge" style="font-size:11px; font-weight:bold; padding:2px 8px; border-radius:4px; display:none;"></span>
+                    </div>
+                    <p style="font-size:12px; color:var(--secondary-text-color, #666); margin:0 0 10px 0; line-height:1.4;">
+                        ${this.t('pair_box_desc')}
+                    </p>
+                    <div style="display:flex; gap:8px;">
+                        <button type="button" id="rmm-btn-start-pair" style="flex:1; padding:9px 12px; border:none; background:var(--warning-color, #ff9800); color:#fff; border-radius:6px; cursor:pointer; font-size:13px; font-weight:bold; transition:all 0.2s;">${this.t('pair_btn_start')}</button>
+                        <button type="button" id="rmm-btn-cancel-pair" style="display:none; padding:9px 14px; border:1px solid var(--error-color, #f44336); background:transparent; color:var(--error-color, #f44336); border-radius:6px; cursor:pointer; font-size:13px; font-weight:bold; transition:all 0.2s;">${this.t('pair_btn_cancel')}</button>
+                    </div>
+                </div>
+                <label style="display:block; font-size:13px; font-weight:bold; margin-bottom:5px;">${this.t('modal_lbl_pin')} <span style="font-size:11px; font-weight:normal; color:var(--secondary-text-color, #888);">${this.t('pair_manual_hint')}</span></label>
                 <input type="text" id="rmm-input-pin" value="${defaultPin}" placeholder="输入控制台上的红底验证码" style="width:100%; box-sizing:border-box; padding:10px; border:1px solid var(--divider-color, #ccc); border-radius:6px; margin-bottom:25px; text-transform:uppercase; font-weight:bold; letter-spacing:1px; background:var(--secondary-background-color, #fafafa); color:var(--primary-text-color, #333); font-size:14px; outline:none;">
                 <label style="display:block; font-size:13px; font-weight:bold; margin-bottom:5px;">${this.t('modal_lbl_ip')}</label>
                 <input type="text" id="rmm-input-ip" value="${defaultIp}" placeholder="例如: 192.168.1.100" style="width:100%; box-sizing:border-box; padding:10px; border:1px solid var(--divider-color, #ccc); border-radius:6px; margin-bottom:25px; background:var(--secondary-background-color, #fafafa); color:var(--primary-text-color, #333); font-size:14px; outline:none;">
@@ -420,15 +456,108 @@ export class RadarEditor {
             modalBox.innerHTML = html;
             modalOverlay.appendChild(modalBox);
             document.body.appendChild(modalOverlay);
+            let pairTimer = null;
+            let unsubPair = null;
+            const stopPairWindow = () => {
+                if (pairTimer) {
+                    clearInterval(pairTimer);
+                    pairTimer = null;
+                }
+                if (state.hass && state.hass.callWS) {
+                    state.hass.callWS({ type: 'rmm/cancel_pair_window' }).catch(() => {});
+                }
+            };
+            const closeModal = () => {
+                stopPairWindow();
+                if (unsubPair) {
+                    unsubPair();
+                    unsubPair = null;
+                }
+                modalOverlay.remove();
+                document.removeEventListener('keydown', escListener);
+            };
             const escListener = (e) => {
                 if (e.key === 'Escape') {
-                    modalOverlay.remove();
-                    document.removeEventListener('keydown', escListener);
+                    closeModal();
                 }
             };
             document.addEventListener('keydown', escListener);
             const inputName = modalBox.querySelector('#rmm-input-name');
             const inputPin = modalBox.querySelector('#rmm-input-pin');
+            const btnStartPair = modalBox.querySelector('#rmm-btn-start-pair');
+            const btnCancelPair = modalBox.querySelector('#rmm-btn-cancel-pair');
+            const pairBadge = modalBox.querySelector('#rmm-pair-status-badge');
+            const resetPairUI = () => {
+                if (pairTimer) {
+                    clearInterval(pairTimer);
+                    pairTimer = null;
+                }
+                btnStartPair.innerText = this.t('pair_btn_start');
+                btnStartPair.style.background = 'var(--warning-color, #ff9800)';
+                btnStartPair.disabled = false;
+                btnCancelPair.style.display = 'none';
+            };
+            btnCancelPair.onclick = () => {
+                stopPairWindow();
+                resetPairUI();
+                btnStartPair.innerText = this.t('pair_btn_start');
+            };
+            btnStartPair.onclick = async () => {
+                const targetName = inputName ? inputName.value.trim() : "";
+                try {
+                    if (state.hass && state.hass.callWS) {
+                        await state.hass.callWS({
+                            type: 'rmm/start_pair_window',
+                            radar_name: targetName,
+                            timeout: 60
+                        });
+                    }
+                } catch (err) {
+                    console.error("RMM: Failed to start pair window", err);
+                    alert("启动配对失败: " + (err.message || err));
+                    return;
+                }
+                let secondsLeft = 60;
+                btnStartPair.innerText = this.t('pair_btn_waiting', secondsLeft);
+                btnStartPair.style.background = 'var(--primary-color, #03a9f4)';
+                btnStartPair.disabled = true;
+                btnCancelPair.style.display = 'block';
+                if (pairTimer) clearInterval(pairTimer);
+                pairTimer = setInterval(() => {
+                    secondsLeft--;
+                    if (secondsLeft <= 0) {
+                        resetPairUI();
+                        btnStartPair.innerText = this.t('pair_btn_timeout');
+                    } else {
+                        btnStartPair.innerText = this.t('pair_btn_waiting', secondsLeft);
+                    }
+                }, 1000);
+            };
+            if (state.hass && state.hass.connection && state.hass.connection.subscribeEvents) {
+                state.hass.connection.subscribeEvents((ev) => {
+                    const data = ev.data || {};
+                    if (data.success && data.device_pin) {
+                        const curName = inputName ? inputName.value.trim().toLowerCase() : "";
+                        const matched = (data.radar_name || "").trim().toLowerCase();
+                        if (curName && matched && curName !== matched) return;
+                        stopPairWindow();
+                        if (inputName && !inputName.value && data.radar_name) {
+                            inputName.value = data.radar_name;
+                        }
+                        inputPin.value = data.device_pin;
+                        btnStartPair.innerText = this.t('pair_btn_success');
+                        btnStartPair.style.background = '#4CAF50';
+                        btnStartPair.disabled = true;
+                        btnCancelPair.style.display = 'none';
+                        pairBadge.style.display = 'inline-block';
+                        pairBadge.style.background = '#e8f5e9';
+                        pairBadge.style.color = '#2e7d32';
+                        pairBadge.innerText = this.t('pair_badge_success');
+                    }
+                }, "rmm_pair_result").then(unsub => {
+                    unsubPair = unsub;
+                });
+            }
             if (!isEdit) {
                 const discBtns = modalBox.querySelectorAll('.btn-discovered');
                 if (discBtns.length > 0) {
@@ -445,13 +574,17 @@ export class RadarEditor {
                         btn.style.background = 'var(--primary-color, #03a9f4)';
                         btn.style.color = '#fff';
                         inputName.value = btn.getAttribute('data-name');
+                        const discIp = btn.getAttribute('data-ip');
+                        const ipField = modalBox.querySelector('#rmm-input-ip');
+                        if (ipField && discIp) {
+                            ipField.value = discIp;
+                        }
                         inputPin.focus();
                     };
                 });
             }
             modalBox.querySelector('#rmm-btn-cancel').onclick = () => {
-                modalOverlay.remove();
-                document.removeEventListener('keydown', escListener);
+                closeModal();
             };
             modalBox.querySelector('#rmm-btn-confirm').onclick = () => {
                 const nameField = modalBox.querySelector('#rmm-input-name');
@@ -476,8 +609,7 @@ export class RadarEditor {
                     alert(this.t("dup_name", lowerName)); 
                     return; 
                 }
-                modalOverlay.remove();
-                document.removeEventListener('keydown', escListener);
+                closeModal();
                 const payload = { 
                     radar_name: lowerName, 
                     map_group: state.mapGroup || "default",
@@ -563,6 +695,98 @@ export class RadarEditor {
                     this.ui.updateRadarList(state, config); this.ui.updateLayoutInputs(state, state.hass); 
                     this.renderer.draw(state, config, state.hass); 
                 }, 500);
+            }
+        });
+        bindClick('btn-radar-web', async () => {
+            if (!state.radar || state.radar === 'rd_default') return alert(this.t("sel_radar"));
+            const rName = state.radar;
+            let ip = (state.data[rName]?.radar_ip || state.data[rName]?.ip || '').trim();
+            const isZh = (state.hass && state.hass.language && state.hass.language.startsWith('zh'));
+            if (!ip && this.host?.fullRawData?.discovered_radars?.[rName]?.ip) {
+                ip = this.host.fullRawData.discovered_radars[rName].ip.trim();
+            }
+            const rLower = rName.toLowerCase();
+            if (!ip && state.hass?.devices) {
+                for (const dev of Object.values(state.hass.devices)) {
+                    const matchName = (dev.name && dev.name.toLowerCase() === rLower) ||
+                                      (dev.name_by_user && dev.name_by_user.toLowerCase() === rLower);
+                    const matchId = dev.identifiers && dev.identifiers.some(ids => Array.isArray(ids) && ids.some(id => String(id).toLowerCase().includes(rLower)));
+                    if ((matchName || matchId) && dev.configuration_url) {
+                        const m = dev.configuration_url.match(/https?:\/\/([^/:]+)/);
+                        if (m) { ip = m[1]; break; }
+                    }
+                }
+            }
+            if (!ip && state.hass && typeof state.hass.callWS === 'function') {
+                try {
+                    const devices = await state.hass.callWS({ type: 'config/device_registry/list' });
+                    for (const dev of (devices || [])) {
+                        const matchName = (dev.name && dev.name.toLowerCase() === rLower) ||
+                                          (dev.name_by_user && dev.name_by_user.toLowerCase() === rLower);
+                        const matchId = dev.identifiers && dev.identifiers.some(ids => Array.isArray(ids) && ids.some(id => String(id).toLowerCase().includes(rLower)));
+                        if ((matchName || matchId) && dev.configuration_url) {
+                            const m = dev.configuration_url.match(/https?:\/\/([^/:]+)/);
+                            if (m) { ip = m[1]; break; }
+                        }
+                    }
+                } catch(e) {}
+            }
+            if (ip) {
+                if (state.data && state.data[rName]) {
+                    state.data[rName].radar_ip = ip;
+                }
+                if (state.hass && typeof state.hass.callService === 'function') {
+                    state.hass.callService('radar_map_manager', 'add_radar', {
+                        radar_name: rName,
+                        radar_ip: ip
+                    }).catch(() => {});
+                }
+            }
+            const targetHost = ip || `${rName}.local`;
+            let clean = targetHost.replace(/:81$/, '');
+            let url = (clean.startsWith('http://') || clean.startsWith('https://')) ? clean : `http://${clean}`;
+            window.open(url, '_blank');
+        });
+        bindClick('btn-radar-ota', () => {
+            if (!state.radar || state.radar === 'rd_default') return alert(this.t("sel_radar"));
+            const rName = state.radar;
+            const isZh = (state.hass && state.hass.language && state.hass.language.startsWith('zh'));
+            let safeName = rName.toLowerCase().replace(/ /g, "_").replace(/-/g, "_");
+            let updateEntId = `update.${safeName}_firmware`;
+            if (state.hass && !state.hass.states[updateEntId]) {
+                const found = Object.keys(state.hass.states).find(k => k.startsWith(`update.${safeName}`) && k.includes('firmware'));
+                if (found) updateEntId = found;
+            }
+            const updateEnt = state.hass && state.hass.states[updateEntId];
+            if (updateEnt) {
+                const isNew = updateEnt.state === 'on';
+                const curVer = updateEnt.attributes?.installed_version || '未知';
+                const newVer = updateEnt.attributes?.latest_version || curVer;
+                const msg = isNew 
+                    ? (isZh ? `🚀 发现新固件版本！\n\n当前版本: ${curVer}\n最新版本: ${newVer}\n\n是否立即启动云端 OTA 升级？` : `🚀 New firmware available!\n\nCurrent: ${curVer}\nLatest: ${newVer}\n\nStart Cloud OTA upgrade now?`)
+                    : (isZh ? `当前雷达固件版本为: ${curVer}\n\n是否向雷达下发检查与重新升级指令？` : `Current radar firmware: ${curVer}\n\nSend check / re-upgrade command to radar?`);
+                if (confirm(msg)) {
+                    state.hass.callService('update', 'install', { entity_id: updateEnt.entity_id })
+                    .then(() => {
+                        alert(isZh ? "✅ 升级指令已下发！雷达正在后台下载更新并重启，请勿断电。" : "✅ Upgrade command sent! Radar is downloading firmware and will restart.");
+                    })
+                    .catch(() => {
+                        state.hass.callService('mqtt', 'publish', {
+                            topic: `rmm_radar/${rName}/update/set`,
+                            payload: 'INSTALL'
+                        });
+                        alert(isZh ? "✅ 已通过 MQTT 下发 OTA 升级指令，雷达正在执行更新！" : "✅ OTA upgrade command sent via MQTT.");
+                    });
+                }
+            } else {
+                const msg = isZh ? `是否向雷达 '${rName}' 下发尝试升级指令 (Cloud OTA)？` : `Send Cloud OTA upgrade command to radar '${rName}'?`;
+                if (confirm(msg)) {
+                    state.hass.callService('mqtt', 'publish', {
+                        topic: `rmm_radar/${rName}/update/set`,
+                        payload: 'INSTALL'
+                    });
+                    alert(isZh ? "✅ 已通过 MQTT 下发 OTA 升级指令，雷达正在执行更新！" : "✅ OTA upgrade command sent via MQTT.");
+                }
             }
         });
         const updatePointFromInput = () => {

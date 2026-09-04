@@ -10,6 +10,7 @@ import math
 import asyncio
 import aiohttp
 import socket
+import re
 from homeassistant.components import mqtt
 from datetime import timedelta
 from homeassistant.core import HomeAssistant, ServiceCall, callback
@@ -176,6 +177,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     hass.data[DOMAIN]["processor"] = processor
     hass.data[DOMAIN]["timer_remove"] = None
     hass.data[DOMAIN]["last_seen_udp"] = {}
+    hass.data[DOMAIN]["pairing_session"] = {
+        "active": False,
+        "deadline": 0,
+        "target_radar": "",
+    }
     enable_udp = entry.options.get(CONF_ENABLE_UDP, DEFAULT_ENABLE_UDP)
     udp_port = entry.options.get(CONF_UDP_PORT, DEFAULT_UDP_PORT)
     hass.data[DOMAIN]["enable_udp"] = enable_udp
@@ -296,6 +302,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         map_group = call.data.get("map_group", "default")
         device_pin = call.data.get("device_pin", "").strip()
         radar_ip = call.data.get("radar_ip", "").strip()
+        if not radar_ip:
+            cached_caps = hass.data[DOMAIN].get("capabilities_cache", {}).get(radar_name, {})
+            if cached_caps.get("ip"):
+                radar_ip = cached_caps["ip"]
+            else:
+                try:
+                    from homeassistant.helpers import device_registry as dr
+                    dev_reg = dr.async_get(hass)
+                    r_lower = radar_name.lower()
+                    for dev in dev_reg.devices.values():
+                        match_name = (dev.name and dev.name.lower() == r_lower) or (dev.name_by_user and dev.name_by_user.lower() == r_lower)
+                        match_id = any(r_lower in str(ident).lower() for domain, ident in dev.identifiers)
+                        if (match_name or match_id) and dev.configuration_url:
+                            m = re.search(r'https?://([^/:]+)', dev.configuration_url)
+                            if m:
+                                radar_ip = m.group(1)
+                                break
+                except Exception:
+                    pass
         await coordinator.async_add_radar(radar_name, map_group)
         if "radars" in coordinator.data and radar_name in coordinator.data["radars"]:
             coordinator.data["radars"][radar_name]["device_pin"] = device_pin
@@ -485,12 +510,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                 r_name = topic_parts[1]
                 caps = payload.get("capabilities", {})
                 mac = payload.get("mac", "")
+                r_ip = payload.get("ip", "").strip()
                 caps["mac"] = mac
                 caps["model"] = payload.get("model", "Unknown")
+                if r_ip:
+                    caps["ip"] = r_ip
                 degraded_caps = caps.copy()
                 degraded_caps["max_hw_zones"] = 0
                 degraded_caps["mac"] = mac
                 degraded_caps["model"] = payload.get("model", "Unknown")
+                if r_ip:
+                    degraded_caps["ip"] = r_ip
+                    if r_name in coordinator.data.get("radars", {}):
+                        if not coordinator.data["radars"][r_name].get("radar_ip"):
+                            coordinator.data["radars"][r_name]["radar_ip"] = r_ip
+                            hass.async_create_task(coordinator.async_save())
                 stale_keys = []
                 for k, v in hass.data[DOMAIN]["capabilities_cache"].items():
                     if v.get("mac") == mac and k != r_name:
@@ -601,6 +635,58 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                         pending["is_manual_add"] = False
         except Exception as e:
             _LOGGER.error(f"RMM: Failed to parse auth response: {e}")
+    @callback
+    async def async_on_pair_request(msg):
+        try:
+            topic_parts = msg.topic.split('/')
+            if len(topic_parts) < 3:
+                return
+            r_name = topic_parts[1]
+            session = hass.data[DOMAIN].get("pairing_session", {})
+            if not session.get("active", False):
+                _LOGGER.warning(f"RMM: 拦截到 '{r_name}' 发来的硬件按键配对请求，但当前未开启配对窗口，已拒绝！")
+                return
+            if time.time() > session.get("deadline", 0):
+                session["active"] = False
+                _LOGGER.warning(f"RMM: 雷达 '{r_name}' 的按键配对请求已超时，忽略。")
+                return
+            target = session.get("target_radar", "")
+            if target and target.lower() != r_name.lower():
+                _LOGGER.warning(f"RMM: 收到 '{r_name}' 的配对请求，但当前配对窗口正在等待 '{target}'，忽略。")
+                return
+            payload = json.loads(msg.payload)
+            mac = payload.get("mac", "")
+            pin = payload.get("device_pin", "").strip().upper()
+            if not pin:
+                _LOGGER.error(f"RMM: 来自 '{r_name}' 的配对请求未包含有效 PIN 码！")
+                return
+            _LOGGER.info(f"RMM: 🎉 成功捕获雷达 '{r_name}' 的硬件双击配对请求！PIN: {pin}")
+            session["active"] = False
+            ack_topic = f"rmm_radar/{r_name}/pair/ack"
+            ack_payload = json.dumps({"status": "ok", "mac": mac, "radar_name": r_name})
+            hass.async_create_task(mqtt.async_publish(hass, ack_topic, ack_payload))
+            hass.bus.async_fire("rmm_pair_result", {
+                "success": True,
+                "radar_name": r_name,
+                "device_pin": pin,
+                "mac": mac,
+            })
+            if "radars" in coordinator.data and r_name in coordinator.data["radars"]:
+                coordinator.data["radars"][r_name]["device_pin"] = pin
+                await coordinator.async_save()
+                nonce = secrets.token_hex(8)
+                cached_caps = hass.data[DOMAIN].get("capabilities_cache", {}).get(r_name, {})
+                hass.data[DOMAIN]["pending_auth"][r_name] = {
+                    "nonce": nonce,
+                    "mac": mac,
+                    "time": time.time(),
+                    "real_caps": cached_caps if cached_caps else {},
+                    "is_manual_add": True
+                }
+                challenge_topic = f"rmm_radar/{r_name}/auth/challenge"
+                hass.async_create_task(mqtt.async_publish(hass, challenge_topic, json.dumps({"nonce": nonce})))
+        except Exception as e:
+            _LOGGER.error(f"RMM: 处理硬件配对请求异常: {e}")
     @callback
     async def async_on_yaw_delta(msg):
         try:
@@ -803,6 +889,42 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         websocket_api.async_register_command(hass, websocket_global_stream)
     except Exception:
         pass
+    @callback
+    @websocket_api.websocket_command({
+        vol.Required("type"): "rmm/start_pair_window",
+        vol.Optional("radar_name", default=""): cv.string,
+        vol.Optional("timeout", default=60): cv.positive_int,
+    })
+    def websocket_start_pair_window(hass, connection, msg):
+        target = msg.get("radar_name", "").strip().lower()
+        timeout = msg.get("timeout", 60)
+        deadline = time.time() + timeout
+        hass.data[DOMAIN]["pairing_session"] = {
+            "active": True,
+            "deadline": deadline,
+            "target_radar": target,
+        }
+        _LOGGER.info(f"RMM: 已开启极速配对窗口 ({timeout}s)，等待硬件双击... 目标雷达: '{target or '全部'}'")
+        connection.send_result(msg["id"], {"status": "ok", "deadline": deadline})
+    try:
+        websocket_api.async_register_command(hass, websocket_start_pair_window)
+    except Exception:
+        pass
+    @callback
+    @websocket_api.websocket_command({
+        vol.Required("type"): "rmm/cancel_pair_window",
+    })
+    def websocket_cancel_pair_window(hass, connection, msg):
+        session = hass.data[DOMAIN].get("pairing_session", {})
+        session["active"] = False
+        session["deadline"] = 0
+        session["target_radar"] = ""
+        _LOGGER.info("RMM: 极速配对窗口已由用户手动取消/关闭。")
+        connection.send_result(msg["id"], {"status": "cancelled"})
+    try:
+        websocket_api.async_register_command(hass, websocket_cancel_pair_window)
+    except Exception:
+        pass
     await processor.async_start()
     async def initial_startup(event=None):
         min_interval = 0.1
@@ -813,12 +935,34 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         await processor.update(force=True)
         await broadcast_hw_zones()
         try:
+            from homeassistant.helpers import device_registry as dr
+            dev_reg = dr.async_get(hass)
+            updated_ips = False
+            for r_name, r_conf in coordinator.data.get("radars", {}).items():
+                if not r_conf.get("radar_ip"):
+                    r_lower = r_name.lower()
+                    for dev in dev_reg.devices.values():
+                        match_name = (dev.name and dev.name.lower() == r_lower) or (dev.name_by_user and dev.name_by_user.lower() == r_lower)
+                        match_id = any(r_lower in str(ident).lower() for domain, ident in dev.identifiers)
+                        if (match_name or match_id) and dev.configuration_url:
+                            m = re.search(r'https?://([^/:]+)', dev.configuration_url)
+                            if m:
+                                r_conf["radar_ip"] = m.group(1)
+                                updated_ips = True
+                                _LOGGER.info(f"RMM: 自动从 HA 设备注册表匹配到雷达 '{r_name}' 的 IP: {m.group(1)}")
+                                break
+            if updated_ips:
+                await coordinator.async_save()
+        except Exception as e:
+            _LOGGER.debug(f"RMM: 自动同步雷达 IP 异常: {e}")
+        try:
             await mqtt.async_subscribe(hass, "rmm_radar/+/info", on_radar_info)
             await mqtt.async_subscribe(hass, "rmm_radar/+/auth/response", async_on_auth_response)
             await mqtt.async_subscribe(hass, "rmm_radar/+/data", on_radar_data)
             await mqtt.async_subscribe(hass, "rmm_radar/+/yaw_delta/state", async_on_yaw_delta)
             await mqtt.async_subscribe(hass, "rmm_radar/+/auto_block/state", async_on_auto_block_state)
             await mqtt.async_subscribe(hass, "rmm_radar/+/availability", on_radar_availability)
+            await mqtt.async_subscribe(hass, "rmm_radar/+/pair/request", async_on_pair_request)
             _LOGGER.info("RMM: Successfully subscribed to info and auth topics")
         except Exception as e:
             _LOGGER.error(f"RMM: Failed to subscribe to info topic: {e}")
