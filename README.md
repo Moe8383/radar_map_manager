@@ -132,9 +132,9 @@ recorder:
 ```yaml
 type: custom:radar-map-card
 map_group: default                   # Optional, floor plan/map group name, default: default
-read_only: false                     # Optional, true for view mode, false for edit mode, default: false
 bg_image: /local/floorplan/house.png # Required in edit mode, path to floor plan image
 target_radius: 5                     # Optional, size of the fused target dot
+radar_radius: 1.1                    # Optional, size of the radar device node, default: 1.1
 handle_radius: 1.5                   # Optional, size of edit handles
 handle_stroke: 0.2                   # Optional, border size of active handles
 zone_stroke: 0.5                     # Optional, zone line width
@@ -151,6 +151,7 @@ type: picture-elements
 image: /local/floorplan/3dplan/blank_floor.png
 elements:
   - type: custom:radar-map-card
+    radar_radius: 1.1
     target_radius: 5
     read_only: true
     style:
@@ -182,13 +183,20 @@ Click `Layout` in the panel to enter radar layout mode. Targets displayed here a
 
 * Delete: Select an added radar and click `-` to delete it. Operate with caution.
 
-#### 2. Radar Settings
+#### 2. Radar Settings & Status Indicators
 
 ![LAYOUT](gif/layout_editor.gif)
 
-* Positioning: Drag the radar to its actual physical location on the map. Drag the radar handle to adjust the angle. Position and rotation can be fine-tuned using the `X`/`Y`/`Rot` inputs in the panel.
+* **Radar Status & Color Indicators**:
+  * 🌟 **Exclusive Radar (Online)**: Rendered in **Radiant Amber Gold** (`#FF9100`) featuring a dynamic breathing tech halo, ambient soft glow, and an automatic `⭐` star badge prefix.
+  * 🔵 **Standard Radar (Online)**: Displayed in **Tech Blue** (`#03A9F4`).
+  * 🔴 **Offline Warning**: Automatically alerts in **Warning Red** (`#dc3545`) with an `(Off)` indicator when the radar entity becomes unavailable.
+  * ⚫ **Manual Pause**: Displayed in **Dark Gray** (`#555555`) with a `(⏸)` symbol.
+  * 🟡 **Currently Selected**: Center point glows in **Bright Gold** (`#FFD700`), and FOV cone & angle pointers sync seamlessly with the radiant amber theme.
 
-* Scale Adjustment: Stand within the radar's detection range (preferably away from the center line and try multiple positions). Use a combination of these methods to match radar targets with the floor plan:
+* **Positioning**: Drag the radar to its actual physical location on the map. Drag the radar handle to adjust the angle. Position and rotation can be fine-tuned using the `X`/`Y`/`Rot` inputs in the panel.
+
+* **Scale Adjustment**: Stand within the radar's detection range (preferably away from the center line and try multiple positions). Use a combination of these methods to match radar targets with the floor plan:
   
   * 1（Recommended). Click the `Freeze` button. This locks the first target detected by the radar. Manually drag this target to your actual standing position on the floor plan, and the system will automatically calculate the scale.
 
@@ -196,17 +204,22 @@ Click `Layout` in the panel to enter radar layout mode. Targets displayed here a
 
   * 2. Adjust `ScX` and `ScY` sliders to change the `X`/`Y` coordinate scaling.
   * 3. Click `Ax` / `Ay` to automatically adjust based on the background image aspect ratio (reference only).
-  
 
-* Mounting Mode: Check `Ceiling` at the bottom of the panel to switch between "Side Mount" and "Ceiling Mount".
+* **Mounting Mode**: Check `Ceiling` at the bottom of the panel to switch between "Side Mount" and "Ceiling Mount".
 
-* Mirror Mode: Check `Mirror` to invert the radar's X-axis.
+* **Mirror Mode**: Check `Mirror` to invert the radar's X-axis.
 
-* Custom radar types: 2D (X/Y coordinates only), 2.5D (X/Y coordinates + mounting height parameter), or 3D (native X/Y/Z coordinates)
+* **Custom radar types**: 2D (X/Y coordinates only), 2.5D (X/Y coordinates + mounting height parameter), or 3D (native X/Y/Z coordinates)
 
 * `H`: Radar mounting height
 
 * `3D Point Cloud`: Display radar point cloud (only applicable to exclusive radars)
+
+* `⏸` Pause Radar: Temporarily pause data stream & point cloud rendering for this radar.
+
+* **⭐ Exclusive Hardware Actions (Requires RMM Dedicated Hardware, Coming Soon)**:
+  * 🌐 **One-Click Web Console Access**: System automatically detects local LAN IP; click to open web console directly in a new tab.
+  * ☁️ / ⬆️ **Firmware Version & Cloud OTA Upgrade**: Automatically tracks radar firmware updates; alerts with an orange badge and dot when new firmware is available, enabling one-click cloud updates from the card.
 
 * `UNDO`: Undo the last operation.
 
