@@ -266,6 +266,9 @@ export class RadarRenderer {
         const currentRadar = state.radar;
         const baseSize = parseFloat(config.label_size) || 3.5;
         const avatarFontSize = Math.max(1.5, baseSize * 0.7);
+        const globalConfig = (state.data && state.data.global_config) || {};
+        const radarR = parseFloat(config.radar_radius !== undefined ? config.radar_radius : (config.radar_size !== undefined ? config.radar_size : (globalConfig.radar_radius !== undefined ? globalConfig.radar_radius : 1.1))) || 1.1;
+        const rotR = Math.max(0.7, radarR * 0.8);
         radarList.forEach(rObj => {
             const rName = rObj.name;
             const isCurrent = (rName === currentRadar);
@@ -280,6 +283,13 @@ export class RadarRenderer {
             }
             const rData = state.data[rName] || {};
             const isPaused = (rData.paused === true);
+            let isExclusive = !!(rData && (rData.capabilities || rData.device_pin || rData.radar_ip || rData.auth_passed));
+            if (!isExclusive && hass && hass.states) {
+                const safeName = rName.toLowerCase().replace(/ /g, "_").replace(/-/g, "_");
+                if (hass.states[`update.${safeName}_firmware`] || Object.keys(hass.states).some(k => k.startsWith(`update.${safeName}`) && k.includes('firmware'))) {
+                    isExclusive = true;
+                }
+            }
             let opacity = 0.4;
             let strokeColor = '#666';
             if (isCurrent) {
@@ -291,6 +301,9 @@ export class RadarRenderer {
             } else if (isPaused) {
                 strokeColor = '#555555'; 
                 opacity = 0.45;
+            } else if (isExclusive) {
+                strokeColor = '#FF9100'; 
+                opacity = 0.95;
             } else {
                 strokeColor = '#03A9F4'; 
                 opacity = 0.7;
@@ -300,9 +313,17 @@ export class RadarRenderer {
             const ox = cfg.origin_x; 
             const oy = cfg.origin_y; 
             const group = this._create('g', { 'data-id': rName, 'data-radar': rName, class: 'radar-group' });
+            if (isExclusive && !isOffline && !isPaused) {
+                group.appendChild(this._create('circle', {
+                    cx: ox, cy: oy, r: radarR * 2.5, class: 'radar-exclusive-glow', pointerEvents: 'none'
+                }, { fill: 'rgba(255, 145, 0, 0.2)', stroke: 'none' }));
+                group.appendChild(this._create('circle', {
+                    cx: ox, cy: oy, r: radarR * 1.8, class: 'radar-exclusive-halo', pointerEvents: 'none'
+                }, { fill: 'none', stroke: '#FF9100', strokeWidth: Math.max(0.25, radarR * 0.3), strokeDasharray: '1.2, 0.8' }));
+            }
             group.appendChild(this._create('circle', {
-                cx: ox, cy: oy, r: 1.5, class: 'radar-handle-body', 'data-id': rName, 'data-radar': rName
-            }, { fill: strokeColor, stroke: 'white', strokeWidth: '0.5', opacity: opacity, pointerEvents: ptrEvents, cursor: 'move' }));
+                cx: ox, cy: oy, r: radarR, class: 'radar-handle-body', 'data-id': rName, 'data-radar': rName
+            }, { fill: strokeColor, stroke: 'white', strokeWidth: Math.max(0.3, radarR * 0.35), opacity: opacity, pointerEvents: ptrEvents, cursor: 'move' }));
             if (isCurrent) {
                 const handlePos = this.calculateStandardCoord({ ...cfg, mirror_x: false, enable_correction: false }, 0, 4000); 
                 const hx = handlePos.left; const hy = handlePos.top;
@@ -327,17 +348,24 @@ export class RadarRenderer {
                     }
                     pathD += ` Z`;
                 }
-                group.appendChild(this._create('path', { d: pathD }, { fill: 'cyan', fillOpacity: '0.15', stroke: 'cyan', strokeWidth: '0.5', strokeDasharray: '2,1', pointerEvents: 'none' }));
-                group.appendChild(this._create('line', { x1: ox, y1: oy, x2: hx, y2: hy }, { stroke: strokeColor, strokeWidth: '0.8', strokeDasharray: '4,2', opacity: opacity, pointerEvents: 'none' }));
-                group.appendChild(this._create('circle', { cx: hx, cy: hy, r: 1.2, class: 'radar-handle-rot', 'data-id': rName, 'data-radar': rName }, { fill: 'cyan', stroke: 'white', strokeWidth: '0.5', opacity: opacity, pointerEvents: ptrEvents, cursor: 'alias' }));
-                const txt = this._create('text', { x: hx, y: hy - 2 }, { fontSize: `${avatarFontSize}px`, fill: 'cyan', textAnchor: 'middle', fontWeight: 'bold', pointerEvents: 'none', textShadow: '1px 1px 1px black', opacity: opacity });
-                txt.textContent = isPaused ? `${Math.round(cfg.rotation)}° ⏸` : `${Math.round(cfg.rotation)}°`;
+                const fovFill = isExclusive ? 'rgba(255, 145, 0, 0.14)' : 'cyan';
+                const fovStroke = isExclusive ? '#FF9100' : 'cyan';
+                const handleLineStroke = isExclusive ? '#FF9100' : strokeColor;
+                const rotHandleFill = isExclusive ? '#FFB300' : 'cyan';
+                const rotTextFill = isExclusive ? '#FF9100' : 'cyan';
+                group.appendChild(this._create('path', { d: pathD }, { fill: fovFill, fillOpacity: isExclusive ? '1' : '0.15', stroke: fovStroke, strokeWidth: '0.5', strokeDasharray: '2,1', pointerEvents: 'none' }));
+                group.appendChild(this._create('line', { x1: ox, y1: oy, x2: hx, y2: hy }, { stroke: handleLineStroke, strokeWidth: '0.8', strokeDasharray: '4,2', opacity: opacity, pointerEvents: 'none' }));
+                group.appendChild(this._create('circle', { cx: hx, cy: hy, r: rotR, class: 'radar-handle-rot', 'data-id': rName, 'data-radar': rName }, { fill: rotHandleFill, stroke: 'white', strokeWidth: Math.max(0.3, radarR * 0.35), opacity: opacity, pointerEvents: ptrEvents, cursor: 'alias' }));
+                const prefix = isExclusive ? '⭐ ' : '';
+                const txt = this._create('text', { x: hx, y: hy - rotR - 0.8 }, { fontSize: `${avatarFontSize}px`, fill: rotTextFill, textAnchor: 'middle', fontWeight: 'bold', pointerEvents: 'none', textShadow: '1px 1px 1px black', opacity: opacity });
+                txt.textContent = isPaused ? `${prefix}${Math.round(cfg.rotation)}° ⏸` : `${prefix}${Math.round(cfg.rotation)}°`;
                 group.appendChild(txt);
                 group.appendChild(this._create('line', { x1: 0, y1: oy, x2: 100, y2: oy }, { stroke: 'rgba(255, 255, 0, 0.3)', strokeWidth: '0.2', pointerEvents: 'none' }));
                 group.appendChild(this._create('line', { x1: ox, y1: 0, x2: ox, y2: 100 }, { stroke: 'rgba(255, 255, 0, 0.3)', strokeWidth: '0.2', pointerEvents: 'none' }));
             } else {
-                const name = this._create('text', { x: ox, y: oy + 3 }, { fontSize: `${avatarFontSize * 0.8}px`, fill: strokeColor, textAnchor: 'middle', pointerEvents: 'none', textShadow: '1px 1px 1px black', fontWeight: 'bold' });
-                name.textContent = isOffline ? `${rName} (Off)` : (isPaused ? `${rName} (⏸)` : rName);
+                const prefix = isExclusive ? '⭐ ' : '';
+                const name = this._create('text', { x: ox, y: oy + radarR + 1.8 }, { fontSize: `${avatarFontSize * 0.8}px`, fill: strokeColor, textAnchor: 'middle', pointerEvents: 'none', textShadow: '1px 1px 1px black', fontWeight: 'bold' });
+                name.textContent = isOffline ? `${prefix}${rName} (Off)` : (isPaused ? `${prefix}${rName} (⏸)` : `${prefix}${rName}`);
                 group.appendChild(name);
             }
             svg.appendChild(group);

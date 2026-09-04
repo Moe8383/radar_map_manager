@@ -150,6 +150,14 @@ export class RadarUI {
             .trail-dot { position: absolute; transform: translate(-50%, -50%) scale(1); border-radius: 50%; pointer-events: none; opacity: 0.6; transition: opacity 1.5s ease-in, transform 1.5s linear; z-index: 1; }
             .base-shadow { position: absolute; transform: translate(-50%, -50%); border-radius: 50%; background: rgba(0,0,0,0.5); filter: blur(1px); pointer-events: none; }
             .zone-label { font-size: 3.5px; fill: white; text-anchor: middle; pointer-events: none; text-shadow: 1px 1px 2px black; }
+            .radar-exclusive-halo {
+                animation: rmmHaloPulse 2.4s infinite ease-in-out;
+                transform-origin: center;
+            }
+            @keyframes rmmHaloPulse {
+                0%, 100% { opacity: 0.85; stroke-width: 0.35; stroke: #FF9100; }
+                50% { opacity: 0.25; stroke-width: 0.65; stroke: #FFD54F; }
+            }
         `;
     }
     renderPanel(state, config) {
@@ -987,7 +995,13 @@ export class RadarUI {
         const btnOta = this.root.getElementById('btn-radar-ota');
         const isZh = (hass && hass.language && hass.language.startsWith('zh'));
         const rData = state.data && state.data[rName];
-        const isExclusiveRadar = !!(rData && (rData.capabilities || rData.device_pin || rData.radar_ip));
+        let isExclusiveRadar = !!(rData && (rData.capabilities || rData.device_pin || rData.radar_ip || rData.auth_passed));
+        if (!isExclusiveRadar && hass && hass.states) {
+            const safeName = rName.toLowerCase().replace(/ /g, "_").replace(/-/g, "_");
+            if (hass.states[`update.${safeName}_firmware`] || Object.keys(hass.states).some(k => k.startsWith(`update.${safeName}`) && k.includes('firmware'))) {
+                isExclusiveRadar = true;
+            }
+        }
         if (btnWeb) {
             btnWeb.style.display = isExclusiveRadar ? 'inline-flex' : 'none';
             if (isExclusiveRadar) {
@@ -1055,7 +1069,16 @@ export class RadarUI {
         if (sortedNames.length === 0) { sel.add(new Option("No radars", "")); return; }
         sortedNames.forEach(name => {
             if (name && name.trim() !== "") {
-                const opt = new Option(name, name);
+                const rData = state.data && state.data[name];
+                let isEx = !!(rData && (rData.capabilities || rData.device_pin || rData.radar_ip || rData.auth_passed));
+                if (!isEx && state.hass && state.hass.states) {
+                    const safeName = name.toLowerCase().replace(/ /g, "_").replace(/-/g, "_");
+                    if (state.hass.states[`update.${safeName}_firmware`] || Object.keys(state.hass.states).some(k => k.startsWith(`update.${safeName}`) && k.includes('firmware'))) {
+                        isEx = true;
+                    }
+                }
+                const label = isEx ? `⭐ ${name}` : name;
+                const opt = new Option(label, name);
                 if (name === currentVal) opt.selected = true;
                 sel.add(opt);
             }
