@@ -323,8 +323,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                     pass
         await coordinator.async_add_radar(radar_name, map_group)
         if "radars" in coordinator.data and radar_name in coordinator.data["radars"]:
-            coordinator.data["radars"][radar_name]["device_pin"] = device_pin
-            coordinator.data["radars"][radar_name]["radar_ip"] = radar_ip
+            radar_entry = coordinator.data["radars"][radar_name]
+            if device_pin:
+                radar_entry["device_pin"] = device_pin
+            if radar_ip:
+                radar_entry["radar_ip"] = radar_ip
             await coordinator.async_save()
         cached_caps = hass.data[DOMAIN].get("capabilities_cache", {}).get(radar_name)
         if cached_caps:
@@ -334,6 +337,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         pending = hass.data[DOMAIN]["pending_auth"].get(radar_name)
         if pending and (time.time() - pending.get("time", 0) < 3):
             _LOGGER.warning(f"RMM: 拦截到高频重复添加请求，防抖生效！")
+            return
+        current_pin = device_pin or coordinator.data.get("radars", {}).get(radar_name, {}).get("device_pin", "")
+        if not current_pin:
             return
         nonce = secrets.token_hex(8)
         hass.data[DOMAIN]["pending_auth"][radar_name] = {

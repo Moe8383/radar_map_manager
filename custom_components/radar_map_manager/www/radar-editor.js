@@ -731,16 +731,8 @@ export class RadarEditor {
                     }
                 } catch(e) {}
             }
-            if (ip) {
-                if (state.data && state.data[rName]) {
-                    state.data[rName].radar_ip = ip;
-                }
-                if (state.hass && typeof state.hass.callService === 'function') {
-                    state.hass.callService('radar_map_manager', 'add_radar', {
-                        radar_name: rName,
-                        radar_ip: ip
-                    }).catch(() => {});
-                }
+            if (ip && state.data && state.data[rName]) {
+                state.data[rName].radar_ip = ip;
             }
             const targetHost = ip || `${rName}.local`;
             let clean = targetHost.replace(/:81$/, '');
