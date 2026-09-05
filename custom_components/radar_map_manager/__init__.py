@@ -276,13 +276,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             layout = r_conf.get("layout", {})
             ox = float(layout.get('origin_x', 50)); oy = float(layout.get('origin_y', 50))
             sx = float(layout.get('scale_x', 5)); sy = float(layout.get('scale_y', 5))
+            if sx <= 0: sx = 5.0
+            if sy <= 0: sy = 5.0
             rot = float(layout.get('rotation', 0))
             base_rad = (rot - 90) * math.pi / 180.0
             y_vec_x = math.cos(base_rad); y_vec_y = math.sin(base_rad)
             x_vec_x = math.cos(base_rad + (math.pi / 2)); x_vec_y = math.sin(base_rad + (math.pi / 2))
             zone_strings = []
             for zone in monitor_zones:
-                pts = zone.get("points", [])
+                pts = (zone.get("points", []) if isinstance(zone, dict) else zone) or []
                 if len(pts) >= 3:
                     pt_strings = []
                     for p in pts[:20]:
@@ -294,9 +296,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                     zone_strings.append(",".join(pt_strings))
             payload = ";".join(zone_strings)
             topic = f"rmm_radar/{r_name}/monitor_zone/set"
-            await mqtt.async_publish(hass, topic, payload, retain=True)
-            if payload:
-                _LOGGER.info(f"RMM: Sync Monitor Zones to {topic}: {payload}")
+            try:
+                await mqtt.async_publish(hass, topic, payload, retain=True)
+                if payload:
+                    _LOGGER.info(f"RMM: Sync Monitor Zones to {topic}: {payload}")
+            except Exception as e:
+                _LOGGER.error(f"RMM: Failed to publish monitor zones to {topic}: {e}")
     async def handle_add_radar(call: ServiceCall):
         radar_name = call.data["radar_name"]
         map_group = call.data.get("map_group", "default")
@@ -416,6 +421,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             await coordinator.async_save()
         else:
             await coordinator.async_update_zone(radar_name, zone_type, zone_data, map_group)
+            if zone_type == "monitor_zones":
+                await broadcast_monitor_zones()
+            elif zone_type in ["hw_detect_zones", "hw_block_zones", "hw_stay_zones"]:
+                await broadcast_hw_zones()
         await processor.update(force=True)
     async def handle_update_radar_layout(call: ServiceCall):
         radar_name = call.data["radar_name"]

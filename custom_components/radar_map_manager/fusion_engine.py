@@ -62,7 +62,7 @@ class FusionEngine:
                         if monitor_zones:
                             in_monitor = False
                             for zone in monitor_zones:
-                                poly = zone.get("points", [])
+                                poly = (zone.get("points", []) if isinstance(zone, dict) else zone) or []
                                 if poly and len(poly) >= 3:
                                     if self._point_in_polygon(px, py, poly):
                                         in_monitor = True

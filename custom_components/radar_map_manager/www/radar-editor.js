@@ -236,10 +236,13 @@ export class RadarEditor {
                         const btnSave = this.root.getElementById('btn-save');
                         if (btnSave) btnSave.click(); 
                     }
-                    if (callbacks.onSaveLayout) callbacks.onSaveLayout();
+                    if (state.layoutChanges && Object.keys(state.layoutChanges).length > 0) {
+                        if (callbacks.onSaveLayout) callbacks.onSaveLayout();
+                    }
                 }
                 state.selectedIndex = null;
                 state.selectedPointIndex = null;
+                state.hasUnsavedChanges = false;
             }
             exitAddMode();
             if(callbacks.onToggleFOV) callbacks.onToggleFOV(); 
@@ -974,6 +977,12 @@ export class RadarEditor {
                     if (state.editMode === 'layout' && state.radar_zone_type === 'hw_stay_zones') {
                         list.forEach(z => { z.delay = d; });
                     }
+                    state.hasUnsavedChanges = false;
+                    state.selectedPointIndex = null;
+                    const ptX = this.root.getElementById('pt-x');
+                    const ptY = this.root.getElementById('pt-y');
+                    if (ptX) ptX.value = '';
+                    if (ptY) ptY.value = '';
                     exitAddMode();
                     if(callbacks.onSaveZoneConfig) callbacks.onSaveZoneConfig(); 
                 } 

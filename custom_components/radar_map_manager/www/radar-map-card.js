@@ -494,14 +494,16 @@ class RadarMapCardNative extends HTMLElement {
                     }
                 }
             },
-            onSaveZoneConfig: () => {
+            onSaveZoneConfig: async () => {
                 that.state.isAddingNew = false;
-                that.saveToBackend();
+                that.state.hasUnsavedChanges = false;
+                that.state.selectedPointIndex = null;
+                await that.saveToBackend();
                 that.ui.updateStatus(that.state, that.config);
                 that.renderer.draw(that.state, that.config, that._hass);
             },
             onToggleFOV: () => { 
-                if (that.state.fov_edit_mode && that.state.editMode === 'layout' && (that.state.radar_zone_type === 'hw_detect_zones' || that.state.radar_zone_type === 'hw_block_zones' || that.state.radar_zone_type === 'hw_stay_zones')) {
+                if (that.state.fov_edit_mode && that.state.editMode === 'layout' && (that.state.radar_zone_type === 'hw_detect_zones' || that.state.radar_zone_type === 'hw_block_zones' || that.state.radar_zone_type === 'hw_stay_zones' || that.state.radar_zone_type === 'monitor_zones')) {
                     setTimeout(() => that.saveToBackend(), 100);
                 }
                 that.state.fov_edit_mode = !that.state.fov_edit_mode; 
@@ -606,8 +608,8 @@ class RadarMapCardNative extends HTMLElement {
             return state.data.global_zones[type];
         }
     }
-    saveToBackend() {
-        this.ignoreUpdatesUntil = Date.now() + 2000;
+    async saveToBackend() {
+        this.ignoreUpdatesUntil = Date.now() + 3000;
         if (!this.fullRawData) {
             console.error("RMM: Cannot save! fullRawData is missing.");
             alert("⚠️ 安全拦截：尚未接收到雷达后端数据流！\n为防止配置被意外清空，已阻止本次保存。\n\n请刷新页面并等待地图加载后再试！");
@@ -629,10 +631,19 @@ class RadarMapCardNative extends HTMLElement {
             if (this.state.data[key].hw_block_zones)  fullData.radars[key].hw_block_zones  = JSON.parse(JSON.stringify(this.state.data[key].hw_block_zones));
             if (this.state.data[key].hw_stay_zones)   fullData.radars[key].hw_stay_zones   = JSON.parse(JSON.stringify(this.state.data[key].hw_stay_zones));
         });
-        this._hass.callService('radar_map_manager', 'import_config', {
-            config_json: JSON.stringify(fullData)
-        });
-        setTimeout(() => this.fetchData(true), 500);
+        this.fullRawData = JSON.parse(JSON.stringify(fullData));
+        this.state.hasUnsavedChanges = false;
+        try {
+            await this._hass.callService('radar_map_manager', 'import_config', {
+                config_json: JSON.stringify(fullData)
+            });
+            setTimeout(() => {
+                this.ignoreUpdatesUntil = 0;
+            }, 300);
+        } catch (err) {
+            console.error("RMM: saveToBackend failed:", err);
+            this.ignoreUpdatesUntil = 0;
+        }
     }
     enterEditMode(h) {
         this.state.editing = true;
