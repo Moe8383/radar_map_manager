@@ -128,7 +128,8 @@ class FusionEngine:
         if not self.hass: return None
         lower = r_name.lower()
         from .const import DOMAIN
-        live_data = self.hass.data.get(DOMAIN, {}).get("live_data", {}).get(lower)
+        live_dict = self.hass.data.get(DOMAIN, {}).get("live_data", {})
+        live_data = live_dict.get(lower) if lower in live_dict else live_dict.get(r_name)
         if live_data is not None:
             if i <= len(live_data):
                 target = live_data[i-1]
@@ -186,10 +187,7 @@ class FusionEngine:
             elif radar_type == 2:
                 pass
             elif radar_type == 3:
-                if ceiling_mount:
-                    abs_height = radar_h - abs(z_val / 1000.0)
-                else:
-                    abs_height = radar_h + (z_val / 1000.0)
+                abs_height = z_val / 1000.0
             xm = x_val / 1000.0
             ym = y_val / 1000.0
             if layout.get('mirror_x', False): xm = -xm

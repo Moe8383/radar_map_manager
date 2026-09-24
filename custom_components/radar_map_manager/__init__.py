@@ -801,8 +801,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                     if r_conf and r_conf.get("paused", False):
                         return
                 count = payload.get("count", 0)
-                targets = payload.get("targets", [])
-                hass.data[DOMAIN]["live_data"][r_name] = targets[:count]
+                targets = payload.get("targets", payload.get("t", []))
+                cur_targets = targets[:count]
+                hass.data[DOMAIN]["live_data"][r_name] = cur_targets
+                hass.data[DOMAIN]["live_data"][r_name.lower()] = cur_targets
+                now_ts = time.time()
+                hass.data[DOMAIN].setdefault("last_seen_udp", {})[r_name] = now_ts
+                hass.data[DOMAIN]["last_seen_udp"][r_name.lower()] = now_ts
         except Exception:
             pass
     @callback
@@ -815,6 +820,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                     _LOGGER.info(f"RMM: 雷达 '{r_name}' 意外离线 (LWT触发)，正在清空地图残影...")
                     if r_name in hass.data[DOMAIN].get("live_data", {}):
                         hass.data[DOMAIN]["live_data"][r_name] = []
+                    if r_name.lower() in hass.data[DOMAIN].get("live_data", {}):
+                        hass.data[DOMAIN]["live_data"][r_name.lower()] = []
         except Exception:
             pass
     @callback
