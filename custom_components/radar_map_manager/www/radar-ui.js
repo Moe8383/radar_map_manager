@@ -206,9 +206,9 @@ export class RadarUI {
             if (scYRow) scYRow.innerText = t('lbl_scy');
             const btnAy = this.root.getElementById('btn-calc-ay');
             if (btnAy) btnAy.title = t('title_calc_ay');
-            const chkCeilingSpan = this.root.querySelector('label:has(#layout-ceiling) span') || this.root.querySelector('#layout-ceiling ~ span');
-            if (chkCeilingSpan) chkCeilingSpan.innerText = t('lbl_ceiling');
-            const chkMirrorSpan = this.root.querySelector('label:has(#layout-mirror) span') || this.root.querySelector('#layout-mirror ~ span');
+            const chkCeilingSpan = this.root.querySelector('#layout-ceiling + span');
+            if (chkCeilingSpan) { chkCeilingSpan.innerText = t('lbl_ceiling'); }
+            const chkMirrorSpan = this.root.querySelector('#layout-mirror + span') || this.root.querySelector('#layout-mirror ~ span');
             if (chkMirrorSpan) chkMirrorSpan.innerText = t('lbl_mirror');
             const selRadarType = this.root.getElementById('layout-radar-type');
             if (selRadarType) selRadarType.title = t('title_dim_type');

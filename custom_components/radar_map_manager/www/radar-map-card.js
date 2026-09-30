@@ -705,15 +705,22 @@ class RadarMapCardNative extends HTMLElement {
         }
     }
 }
-if (!customElements.get('radar-map-card')) {
-    customElements.define('radar-map-card', RadarMapCardNative);
-}
-window.customCards = window.customCards || [];
-if (!window.customCards.some(c => c.type === 'radar-map-card')) {
+
+function registerCard() {
+  if (!customElements.get("radar-map-card")) {
+    customElements.define("radar-map-card", RadarMapCardNative);
+  }
+
+  window.customCards = window.customCards || [];
+
+  if (!window.customCards.some(card => card.type === "radar-map-card")) {
     window.customCards.push({
       type: "radar-map-card",
       name: "Radar Map Manager",
-      preview: false, 
+      preview: false,
       description: "Advanced visual editor for radar fusion and zones."
     });
+  }
 }
+
+registerCard();
