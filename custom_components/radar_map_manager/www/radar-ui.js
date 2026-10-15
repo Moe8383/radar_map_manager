@@ -35,6 +35,14 @@ const UI_I18N = {
     "title_dim_type": { zh: "雷达维度类型 (2D / 2.5D / 3D)", en: "Radar Dimension Type" },
     "lbl_h": { zh: "高度", en: "H" },
     "title_h": { zh: "雷达离地安装高度 (米)", en: "Radar Height (m)" },
+    "lbl_z_range": { zh: "Z轴范围", en: "Z-Range" },
+    "title_z_range": { zh: "感知高度范围 (Z Min ~ Z Max)", en: "Z-Axis Perception Range" },
+    "title_z_min": { zh: "Z 轴下限 (米)", en: "Z Min (m)" },
+    "title_z_max": { zh: "Z 轴上限 (米)", en: "Z Max (m)" },
+    "lbl_zone_follow_global": { zh: "跟随全局", en: "Global" },
+    "title_zone_follow_global": { zh: "跟随雷达全局感知高度范围", en: "Follow radar global Z-axis range" },
+    "lbl_zone_custom_z": { zh: "跟随全局", en: "Global" },
+    "title_zone_custom_z": { zh: "是否为该防区单独设置感知高度范围", en: "Set dedicated Z-Axis range for this zone" },
     "lbl_point_cloud": { zh: "3D 点云", en: "3D Point Cloud" },
     "lbl_high_cpu": { zh: "(高能耗)", en: "(High CPU)" },
     "title_point_cloud": { zh: "开启硬件点云与 WebSocket 直连通道", en: "Enable Hardware Point Cloud & WS Stream" },
@@ -206,8 +214,8 @@ export class RadarUI {
             if (scYRow) scYRow.innerText = t('lbl_scy');
             const btnAy = this.root.getElementById('btn-calc-ay');
             if (btnAy) btnAy.title = t('title_calc_ay');
-            const chkCeilingSpan = this.root.querySelector('#layout-ceiling + span');
-            if (chkCeilingSpan) { chkCeilingSpan.innerText = t('lbl_ceiling'); }
+            const chkCeilingSpan = this.root.querySelector('#layout-ceiling + span') || this.root.querySelector('#layout-ceiling ~ span');
+            if (chkCeilingSpan) chkCeilingSpan.innerText = t('lbl_ceiling');
             const chkMirrorSpan = this.root.querySelector('#layout-mirror + span') || this.root.querySelector('#layout-mirror ~ span');
             if (chkMirrorSpan) chkMirrorSpan.innerText = t('lbl_mirror');
             const selRadarType = this.root.getElementById('layout-radar-type');
@@ -216,6 +224,15 @@ export class RadarUI {
             if (lblH) { lblH.innerText = t('lbl_h'); lblH.title = t('title_h'); }
             const inH = this.root.getElementById('layout-h');
             if (inH) inH.title = t('title_h');
+            const rowZR = this.root.getElementById('row-z-range');
+            if (rowZR) {
+                const lbl = rowZR.querySelector('label');
+                if (lbl) { lbl.innerText = t('lbl_z_range'); lbl.title = t('title_z_range'); }
+                const inMin = this.root.getElementById('layout-z-min');
+                if (inMin) inMin.title = t('title_z_min');
+                const inMax = this.root.getElementById('layout-z-max');
+                if (inMax) inMax.title = t('title_z_max');
+            }
             const rowPC = this.root.getElementById('row-point-cloud');
             if (rowPC) {
                 const lbl = rowPC.querySelector('label');
@@ -240,6 +257,13 @@ export class RadarUI {
         if (inDelay) inDelay.title = t('title_delay');
         const lblPt = this.root.querySelector('#pt-editor label');
         if (lblPt) lblPt.innerText = t('lbl_pt');
+        const lblCustomZ = this.root.getElementById('lbl-zone-custom-z');
+        if (lblCustomZ) {
+            lblCustomZ.innerText = t('lbl_zone_follow_global');
+            lblCustomZ.title = t('title_zone_follow_global');
+        }
+        const chkCustomZ = this.root.getElementById('chk-zone-custom-z');
+        if (chkCustomZ) chkCustomZ.title = t('title_zone_follow_global');
         const btnSaveZone = this.root.getElementById('btn-save');
         if (btnSaveZone && (!state || (!state.points?.length && !state.isAddingNew && !state.hasUnsavedChanges))) {
             btnSaveZone.innerText = t('btn_add_new');
@@ -469,18 +493,18 @@ export class RadarUI {
             .panel-header .win-controls { display: flex; gap: 6px; align-items: center; pointer-events: auto; }
             .panel-header .win-btn { cursor: pointer; font-size: 14px; font-weight: bold; color: #aaa; }
             .panel-header .win-btn:hover { color: white; }
-            #btn-toggle-lang { font-size: 9px; font-weight: bold; padding: 0 4px; height: 16px; line-height: 14px; border: 1px solid #555; border-radius: 3px; background: #222; color: #fff; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; user-select: none; transition: all 0.2s; }
+            #btn-toggle-lang { font-size: 9px; font-weight: bold; padding: 0 6px; height: 16px; line-height: 14px; border: 1px solid #555; border-radius: 9999px; background: #222; color: #fff; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; user-select: none; transition: all 0.2s; }
             #btn-toggle-lang:hover { background: #1976D2; border-color: #1976D2; color: white; }
             .panel-body { padding: 5px; display: flex; flex-direction: column; gap: 4px; }
-            .tabs { display: flex; gap: 2px; margin-bottom: 4px; }
-            .tabs button { background: #222; border: 1px solid #444; color: #888; padding: 4px 0; border-radius: 2px; font-size: 10px; flex: 1; font-weight: bold; cursor: pointer; }
-            .tabs button:hover { background: #333; color: #ccc; }
-            .tabs button.active { background: #1976D2; color: white; border-color: #1976D2; }
+            .tabs { display: flex; gap: 2px; margin-bottom: 4px; background: #181818; padding: 2px; border-radius: 9999px; border: 1px solid #333; }
+            .tabs button { background: transparent; border: none; color: #888; padding: 3px 0; border-radius: 9999px; font-size: 10px; flex: 1; font-weight: bold; cursor: pointer; transition: all 0.2s; }
+            .tabs button:hover { background: #2a2a2a; color: #ccc; }
+            .tabs button.active { background: #1976D2; color: white; border-radius: 9999px; }
             .content { display: flex; flex-direction: column; gap: 3px; }
             .hidden { display: none !important; }
             .row { display: flex; align-items: center; gap: 3px; margin-bottom: 2px; width: 100%; box-sizing: border-box; }
-            .row label { color: #aaa; width: auto; text-align: right; margin-right: 1px; font-size: 9px; flex-shrink: 0; }
-            .chk-label { display: flex; align-items: center; padding: 1px 3px; border: 1px solid #333; border-radius: 3px; background: #222; cursor: pointer; white-space: nowrap; }
+            .row label { color: #aaa; width: auto; text-align: right; margin-right: 1px; font-size: 9px; flex-shrink: 0; white-space: nowrap; }
+            .chk-label { display: flex; align-items: center; padding: 1px 6px; border: 1px solid #333; border-radius: 9999px; background: #222; cursor: pointer; white-space: nowrap; transition: all 0.2s; }
             .chk-label:hover { background: #333; }
             .chk-label input { margin: 0 2px 0 0; }
             .chk-label span { font-size: 9px; color: #ccc; }
@@ -492,14 +516,14 @@ export class RadarUI {
             #sel-radar { min-width: 0; text-overflow: ellipsis; }
             .slider-row { display: flex; align-items: center; gap: 1px; flex: 1; min-width: 0; }
             .slider { flex: 1; accent-color: #1976D2; height: 2px; margin: 0 2px; cursor: pointer; min-width: 20px; }
-            .stepper { width: 20px; height: 18px; padding: 0; background: #333; border: 1px solid #555; color: white; border-radius: 2px; cursor: pointer; font-size: 12px; line-height: 16px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+            .stepper { width: 20px; height: 18px; padding: 0; background: #333; border: 1px solid #555; color: white; border-radius: 9999px; cursor: pointer; font-size: 12px; line-height: 16px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all 0.2s; }
             .stepper:hover { background: #444; border-color: #777; }
             .stepper:active { background: #1976D2; }
-            .calc-btn { width: 22px; height: 18px; padding: 0; background: #333; border: 1px solid #FF9800; color: #FF9800; border-radius: 2px; cursor: pointer; font-size: 9px; font-weight:bold; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-left: 1px; }
+            .calc-btn { width: 22px; height: 18px; padding: 0; background: #333; border: 1px solid #FF9800; color: #FF9800; border-radius: 9999px; cursor: pointer; font-size: 9px; font-weight:bold; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-left: 1px; transition: all 0.2s; }
             .calc-btn:hover { background: #FF9800; color: black; }
-            .actions { display: flex; gap: 2px; margin-top: 5px; }
-            .actions button, .row button { flex: 1; padding: 4px 0; border: 1px solid #333; border-radius: 2px; cursor: pointer; font-weight: bold; background: #333; color: #ccc; font-size: 9px; display: inline-flex; align-items: center; justify-content: center; }
-            .row button { flex: none; padding: 0 4px; height: 22px; } 
+            .actions { display: flex; gap: 3px; margin-top: 5px; }
+            .actions button, .row button { flex: 1; padding: 4px 4px; border: 1px solid #333; border-radius: 9999px; cursor: pointer; font-weight: bold; background: #333; color: #ccc; font-size: 9px; display: inline-flex; align-items: center; justify-content: center; transition: all 0.2s; }
+            .row button { flex: none; padding: 0 4px; height: 22px; border-radius: 9999px; } 
             .actions button:hover, .row button:hover { filter: brightness(1.2); color: white; border-color: #666; }
             button.primary { background: #1565C0 !important; border-color: #0D47A1 !important; color: white !important; }
             button.success { background: #2E7D32 !important; border-color: #1B5E20 !important; color: white !important; }
@@ -513,7 +537,7 @@ export class RadarUI {
             .scroll-area::-webkit-scrollbar-track { background: transparent; }
             .scroll-area::-webkit-scrollbar-thumb { background: #666; border-radius: 2px; }
             .scroll-area::-webkit-scrollbar-thumb:hover { background: #888; }
-            #btn-toggle-mode { position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 4px; color: rgba(255, 255, 255, 0.7); font-size: 14px; cursor: pointer; z-index: 5; display: flex; align-items: center; justify-content: center; pointer-events: auto; transition: all 0.2s; }
+            #btn-toggle-mode { position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 9999px; color: rgba(255, 255, 255, 0.7); font-size: 14px; cursor: pointer; z-index: 5; display: flex; align-items: center; justify-content: center; pointer-events: auto; transition: all 0.2s; }
             #btn-toggle-mode:hover { background: rgba(33, 150, 243, 0.8); color: white; border-color: #2196F3; }
             #btn-toggle-mode.active { background: #b71c1c; color: white; border-color: #ff5252; }
             .separator { height: 1px; background: #333; margin: 4px 0; }
@@ -557,7 +581,7 @@ export class RadarUI {
                             <div style="display:flex; align-items:center; gap:2px; margin-left:auto; flex-shrink:0;">
                                 <button id="btn-add-radar" class="success" title="Add Radar" style="width:22px; height:22px; padding:0; font-size:11px;">+</button>
                                 <button id="btn-edit-radar" class="primary" title="Edit Radar Params" style="width:22px; height:22px; padding:0; font-size:11px;">✎</button>
-                                <button id="btn-pause-radar" title="Pause Radar" style="width:22px; height:22px; padding:0; background:#4CAF50; color:white; border:none; border-radius:3px; cursor:pointer; font-size:10px;">⏸</button>
+                                <button id="btn-pause-radar" title="Pause Radar" style="width:22px; height:22px; padding:0; background:#4CAF50; color:white; border:none; border-radius:9999px; cursor:pointer; font-size:10px;">⏸</button>
                                 <button id="btn-del-radar" class="danger" title="Del Radar" style="width:22px; height:22px; padding:0; font-size:11px;">-</button>
                             </div>
                         </div>
@@ -569,7 +593,7 @@ export class RadarUI {
                                 <option value="hw_stay_zones">🟪 HW Stay</option>
                             </select>
                             <div style="display:flex; align-items:center; gap:2px; margin-left:auto; flex-shrink:0;">
-                                <button id="btn-auto-block" class="primary" style="display:none; width:auto; padding:0 6px; height:22px; font-size:10px; font-weight:bold; background:#1976D2; color:white; border:none; border-radius:3px; cursor:pointer;" title="Auto Learn Block Zones">🪄 Auto</button>
+                                <button id="btn-auto-block" class="primary" style="display:none; width:auto; padding:0 8px; height:22px; font-size:10px; font-weight:bold; background:#1976D2; color:white; border:none; border-radius:9999px; cursor:pointer;" title="Auto Learn Block Zones">🪄 Auto</button>
                                 <button id="btn-edit-fov" class="warning" style="width:22px; height:22px; padding:0; font-size:11px;" title="Draw Region">✏️</button>
                                 <button id="btn-radar-web" class="info" style="display:none; width:22px; height:22px; padding:0; font-size:11px;" title="访问雷达 Web 控制台">🌐</button>
                                 <button id="btn-radar-ota" class="primary" style="display:none; position:relative; width:22px; height:22px; padding:0; font-size:11px;" title="尝试升级 RMM 硬件固件">☁️</button>
@@ -582,7 +606,7 @@ export class RadarUI {
                                 <label style="width:20px">Rot</label><input type="number" id="layout-rot" step="1">
                             </div>
                             <div class="row">
-                                <label style="width:20px">ScX</label>
+                                <label style="width:28px; white-space:nowrap;">ScX</label>
                                 <div class="slider-row">
                                     <button class="stepper" id="btn-sx-minus">-</button>
                                     <input type="range" id="layout-sx" min="1" max="20" step="0.1" class="slider">
@@ -591,7 +615,7 @@ export class RadarUI {
                                 </div>
                             </div>
                             <div class="row">
-                                <label style="width:20px">ScY</label>
+                                <label style="width:28px; white-space:nowrap;">ScY</label>
                                 <div class="slider-row">
                                     <button class="stepper" id="btn-sy-minus">-</button>
                                     <input type="range" id="layout-sy" min="1" max="20" step="0.1" class="slider">
@@ -601,8 +625,8 @@ export class RadarUI {
                             </div>
                             <div class="row" style="justify-content: space-between; align-items: center; gap: 3px;">
                                 <div style="display:flex; align-items: center; gap:3px; flex-shrink: 0;">
-                                    <label class="chk-label" style="height:22px; box-sizing:border-box; padding:0 3px;"><input type="checkbox" id="layout-ceiling"><span>Ceiling</span></label>
-                                    <label class="chk-label" style="height:22px; box-sizing:border-box; padding:0 3px;"><input type="checkbox" id="layout-mirror"><span>Mirror</span></label>
+                                    <label class="chk-label" style="height:22px; box-sizing:border-box; padding:0 6px;"><input type="checkbox" id="layout-ceiling"><span>Ceiling</span></label>
+                                    <label class="chk-label" style="height:22px; box-sizing:border-box; padding:0 6px;"><input type="checkbox" id="layout-mirror"><span>Mirror</span></label>
                                     <select id="layout-radar-type" style="width:38px; height:22px; box-sizing:border-box; background:#222; color:white; border:1px solid #333; border-radius:3px; padding:0 1px; font-size:10px; cursor:pointer;" title="Radar Dimension Type">
                                         <option value="1">2D</option>
                                         <option value="2">2.5D</option>
@@ -612,6 +636,19 @@ export class RadarUI {
                                 <div id="group-height" style="display:flex; align-items:center; height:22px; flex-shrink: 0; gap:2px;">
                                     <label style="width:auto; font-size:9px; color:#aaa; margin:0;" title="雷达安装高度 (米) / Radar Height (m)">H</label>
                                     <input type="number" id="layout-h" step="0.05" min="0.5" max="6.0" style="width:36px; height:22px; box-sizing:border-box; padding:0 1px; text-align:center; font-size:10px;" title="雷达安装高度 (米) / Radar Height (m)">
+                                    <span style="font-size:9px; color:#777; margin-left:1px;">m</span>
+                                </div>
+                            </div>
+                            <div class="row" id="row-z-range" style="justify-content: space-between; align-items: center; gap: 3px; margin-top: 3px;">
+                                <div style="display:flex; align-items:center; gap:2px; flex-shrink:0;">
+                                    <label style="width:auto; font-size:9px; color:#1976D2; font-weight:bold; margin:0;" title="感知高度范围 (Z-Axis Range)" data-i18n="lbl_z_range">Z-Range</label>
+                                </div>
+                                <div style="display:flex; align-items:center; gap:2px; flex-shrink:0;">
+                                    <span style="font-size:9px; color:#888;">Min</span>
+                                    <input type="number" id="layout-z-min" step="0.1" min="-6.0" max="6.0" value="-6.0" style="width:34px; height:22px; box-sizing:border-box; padding:0 1px; text-align:center; font-size:10px;" title="Z Min (m)">
+                                    <span style="font-size:9px; color:#666;">~</span>
+                                    <span style="font-size:9px; color:#888;">Max</span>
+                                    <input type="number" id="layout-z-max" step="0.1" min="-6.0" max="6.0" value="6.0" style="width:34px; height:22px; box-sizing:border-box; padding:0 1px; text-align:center; font-size:10px;" title="Z Max (m)">
                                     <span style="font-size:9px; color:#777; margin-left:1px;">m</span>
                                 </div>
                             </div>
@@ -636,6 +673,21 @@ export class RadarUI {
                             <label id="lbl-delay" style="width:auto; margin:0 2px; color:#aaa;">Dly</label>
                             <input type="number" id="in-delay" placeholder="0" style="width:30px; text-align:center;" title="Delay">
                         </div>
+                        <div id="row-zone-z-range" class="row point-editor" style="display:none; align-items:center; gap:2px; flex-wrap:nowrap;">
+                            <label style="width:auto; margin:0 1px; color:#1976D2; font-weight:bold; font-size:9.5px; flex-shrink:0;" title="Per-zone Height Range">Z</label>
+                            <label class="chk-label" style="height:18px; padding:0 2px; font-size:9px; margin:0; flex-shrink:0; display:inline-flex; align-items:center; gap:2px;" title="Follow Global">
+                                <input type="checkbox" id="chk-zone-custom-z" style="width:11px; height:11px; margin:0; cursor:pointer;">
+                                <span id="lbl-zone-custom-z" style="font-size:9px; white-space:nowrap;">Global</span>
+                            </label>
+                            <div id="box-zone-z-inputs" style="display:none; flex:1; align-items:center; gap:2px; min-width:0;">
+                                <input type="number" id="in-zone-z-min" step="0.1" min="-6.0" max="6.0" placeholder="Min" style="flex:1; width:30px; min-width:0; height:18px; text-align:center; font-size:9.5px; padding:0 1px;" title="Z Min (m)">
+                                <span style="font-size:9px; color:#666; flex-shrink:0;">~</span>
+                                <input type="number" id="in-zone-z-max" step="0.1" min="-6.0" max="6.0" placeholder="Max" style="flex:1; width:30px; min-width:0; height:18px; text-align:center; font-size:9.5px; padding:0 1px;" title="Z Max (m)">
+                            </div>
+                            <div id="box-zone-z-global" style="display:flex; flex:1; align-items:center; justify-content:center; font-size:9px; color:#888; font-family:monospace; background:rgba(255,255,255,0.05); border-radius:2px; height:18px; min-width:0;">
+                                <span id="val-zone-z-global" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">🌐 Global</span>
+                            </div>
+                        </div>
                         <div id="pt-editor" class="row point-editor">
                             <label>Pt</label>
                             <input type="number" id="pt-x" step="0.1" placeholder="X">
@@ -657,11 +709,11 @@ export class RadarUI {
                         <div class="row" style="flex-direction: column; align-items: stretch; gap: 2px;">
                             <label style="text-align:left; color:#1976D2; font-weight:bold;">Global Map Scale</label>
                             <div style="display:flex; gap: 4px; align-items:center;">
-                                <button id="btn-calib-map-x" style="flex:1; padding: 2px; height:20px; font-size:9px;">📏 Calibrate X</button>
+                                <button id="btn-calib-map-x" style="flex:1; padding: 2px 6px; height:20px; font-size:9px; border-radius:9999px;">📏 Calibrate X</button>
                                 <span id="val-scale-x" style="width:70px; text-align:right; font-size:9px; color:#aaa;">X: Uncalib</span>
                             </div>
                             <div style="display:flex; gap: 4px; align-items:center;">
-                                <button id="btn-calib-map-y" style="flex:1; padding: 2px; height:20px; font-size:9px;">📏 Calibrate Y</button>
+                                <button id="btn-calib-map-y" style="flex:1; padding: 2px 6px; height:20px; font-size:9px; border-radius:9999px;">📏 Calibrate Y</button>
                                 <span id="val-scale-y" style="width:70px; text-align:right; font-size:9px; color:#aaa;">Y: Uncalib</span>
                             </div>
                         </div>
@@ -943,6 +995,7 @@ export class RadarUI {
             if (btnAutoBlock) {
                 btnAutoBlock.style.display = (state.radar_zone_type === 'hw_block_zones' && !state.fov_edit_mode) ? 'inline-block' : 'none';
             }
+            this.updateRadarActionButtons(state, state.hass);
         } else if (state.editMode === 'zone') {
             show(zPanel);
             active(bZone, true);
@@ -1008,6 +1061,81 @@ export class RadarUI {
                 let def = (state.editMode === 'layout' && state.radar_zone_type === 'hw_stay_zones') ? 15 : 0;
                 inDelay.value = (z.delay !== undefined && z.delay !== null) ? z.delay : def;
             }
+            const rowZRange = this.root.getElementById('row-zone-z-range');
+            const ptEditor = this.root.getElementById('pt-editor');
+            const chkCustomZ = this.root.getElementById('chk-zone-custom-z');
+            const boxZInputs = this.root.getElementById('box-zone-z-inputs');
+            const boxZGlobal = this.root.getElementById('box-zone-z-global');
+            const valZGlobal = this.root.getElementById('val-zone-z-global');
+            const inZMin = this.root.getElementById('in-zone-z-min');
+            const inZMax = this.root.getElementById('in-zone-z-max');
+            const isHwZoneType = (state.editMode === 'layout' && ['hw_detect_zones', 'hw_block_zones', 'hw_stay_zones'].includes(state.radar_zone_type));
+            const curRadarData = (state.data && state.radar) ? state.data[state.radar] : null;
+            const caps = curRadarData?.capabilities || {};
+            const model = (caps.model || '').toUpperCase();
+            const rType = (state.layoutChanges?.radar_type !== undefined) 
+                ? state.layoutChanges.radar_type 
+                : (curRadarData?.layout?.radar_type !== undefined ? curRadarData.layout.radar_type : caps.radar_type);
+            const is3DRadar = !!(
+                model.includes('LD6004') || 
+                model.includes('LD6002') || 
+                caps.has_z || 
+                caps.z || 
+                rType === 3 || 
+                rType === '3' || 
+                curRadarData?.type === 3 || 
+                curRadarData?.type === '3'
+            );
+            const hasSelectedPoint = (state.selectedPointIndex !== null);
+            if (isHwZoneType && is3DRadar) {
+                if (hasSelectedPoint) {
+                    if (rowZRange) rowZRange.style.display = 'none';
+                    if (ptEditor) {
+                        ptEditor.style.display = 'flex';
+                        ptEditor.style.opacity = '1';
+                        ptEditor.style.pointerEvents = 'auto';
+                    }
+                } else {
+                    if (ptEditor) ptEditor.style.display = 'none';
+                    if (rowZRange) {
+                        rowZRange.style.display = 'flex';
+                        rowZRange.style.opacity = '1';
+                        rowZRange.style.pointerEvents = 'auto';
+                    }
+                    const isFollowGlobal = (z ? (z.custom_z !== true) : true);
+                    if (chkCustomZ) chkCustomZ.checked = isFollowGlobal;
+                    const lblCustomZ = this.root.getElementById('lbl-zone-custom-z');
+                    if (lblCustomZ) {
+                        lblCustomZ.style.display = 'inline';
+                        lblCustomZ.innerText = this.t('lbl_zone_follow_global', state);
+                    }
+                    if (boxZInputs) boxZInputs.style.display = isFollowGlobal ? 'none' : 'flex';
+                    if (boxZGlobal) boxZGlobal.style.display = isFollowGlobal ? 'flex' : 'none';
+                    let gMin = -6.0, gMax = 6.0;
+                    if (state.layoutChanges?.z_min !== undefined) gMin = parseFloat(state.layoutChanges.z_min);
+                    else if (curRadarData?.layout?.z_min !== undefined) gMin = parseFloat(curRadarData.layout.z_min);
+                    else if (curRadarData?.z_min !== undefined) gMin = parseFloat(curRadarData.z_min);
+                    if (state.layoutChanges?.z_max !== undefined) gMax = parseFloat(state.layoutChanges.z_max);
+                    else if (curRadarData?.layout?.z_max !== undefined) gMax = parseFloat(curRadarData.layout.z_max);
+                    else if (curRadarData?.z_max !== undefined) gMax = parseFloat(curRadarData.z_max);
+                    if (isNaN(gMin)) gMin = -6.0;
+                    if (isNaN(gMax)) gMax = 6.0;
+                    if (valZGlobal) valZGlobal.innerText = `🌐 [${gMin >= 0 ? '+' : ''}${gMin.toFixed(1)} ~ ${gMax >= 0 ? '+' : ''}${gMax.toFixed(1)}]m`;
+                    if (inZMin && (hasSwitchedZone || this.root.activeElement !== inZMin)) {
+                        inZMin.value = (z && z.z_min !== undefined) ? z.z_min : gMin;
+                    }
+                    if (inZMax && (hasSwitchedZone || this.root.activeElement !== inZMax)) {
+                        inZMax.value = (z && z.z_max !== undefined) ? z.z_max : gMax;
+                    }
+                }
+            } else {
+                if (rowZRange) rowZRange.style.display = 'none';
+                if (ptEditor) {
+                    ptEditor.style.display = 'flex';
+                    ptEditor.style.opacity = '1';
+                    ptEditor.style.pointerEvents = 'auto';
+                }
+            }
             if (state.selectedPointIndex !== null && ptX && ptY) {
                 const pts = Array.isArray(z) ? z : z.points;
                 const p = pts[state.selectedPointIndex];
@@ -1034,8 +1162,6 @@ export class RadarUI {
                 }
             }
             if(btnDel) btnDel.disabled = false;
-            const ptEditor = this.root.getElementById('pt-editor');
-            if (ptEditor) { ptEditor.style.opacity = '1'; ptEditor.style.pointerEvents = 'auto'; }
         } else {
             if(btnSave) {
                 if(state.points.length > 0 || state.isAddingNew) {
@@ -1060,8 +1186,13 @@ export class RadarUI {
             }
             if (ptX) ptX.value = '';
             if (ptY) ptY.value = '';
+            if (rowZRange) rowZRange.style.display = 'none';
             const ptEditor = this.root.getElementById('pt-editor');
-            if (ptEditor) { ptEditor.style.opacity = '0.3'; ptEditor.style.pointerEvents = 'none'; }
+            if (ptEditor) {
+                ptEditor.style.display = 'flex';
+                ptEditor.style.opacity = isAdding ? '1' : '0.3';
+                ptEditor.style.pointerEvents = isAdding ? 'auto' : 'none';
+            }
         }
         const btnFreeze = this.root.getElementById('btn-freeze');
         if (btnFreeze) {
@@ -1404,6 +1535,23 @@ export class RadarUI {
             hVal = parseFloat(state.layoutChanges.mount_height);
         }
         setVal('layout-h', isNaN(hVal) ? 2.2 : hVal);
+        const rowZR = this.root.getElementById('row-z-range');
+        const inZMin = this.root.getElementById('layout-z-min');
+        const inZMax = this.root.getElementById('layout-z-max');
+        if (rowZR && rName) {
+            const is3DSupported = (caps.model === 'LD6002B' || caps.model === 'LD6004' || state.data[rName]?.layout?.radar_type === 3);
+            rowZR.style.display = is3DSupported ? 'flex' : 'none';
+            let zMinVal = state.data[rName]?.layout?.z_min !== undefined ? parseFloat(state.data[rName].layout.z_min) : -6.0;
+            let zMaxVal = state.data[rName]?.layout?.z_max !== undefined ? parseFloat(state.data[rName].layout.z_max) : 6.0;
+            if (state.layoutChanges && state.layoutChanges.z_min !== undefined) {
+                zMinVal = parseFloat(state.layoutChanges.z_min);
+            }
+            if (state.layoutChanges && state.layoutChanges.z_max !== undefined) {
+                zMaxVal = parseFloat(state.layoutChanges.z_max);
+            }
+            if (inZMin && this.root.activeElement !== inZMin) setVal('layout-z-min', isNaN(zMinVal) ? -6.0 : zMinVal);
+            if (inZMax && this.root.activeElement !== inZMax) setVal('layout-z-max', isNaN(zMaxVal) ? 6.0 : zMaxVal);
+        }
         const chkEng = this.root.getElementById('chk-eng-mode');
         const rowPc = this.root.getElementById('row-point-cloud');
         if (chkEng && rowPc && rName) {
@@ -1465,6 +1613,12 @@ export class RadarUI {
                 }
             }
         }
+        this.updateRadarActionButtons(state, hass);
+    }
+    updateRadarActionButtons(state, hass) {
+        const sel = this.root.getElementById('sel-radar');
+        const rName = state.radar || (sel && sel.value) || '';
+        if (!rName || rName === 'rd_default') return;
         const btnWeb = this.root.getElementById('btn-radar-web');
         const btnOta = this.root.getElementById('btn-radar-ota');
         const isZh = this.isZh(state);
@@ -1479,7 +1633,11 @@ export class RadarUI {
         if (btnWeb) {
             btnWeb.style.display = isExclusiveRadar ? 'inline-flex' : 'none';
             if (isExclusiveRadar) {
+                const discIp = (this.root.host?.fullRawData?.discovered_radars?.[rName]?.ip || '').trim();
                 let ip = (rData && (rData.radar_ip || rData.ip)) ? (rData.radar_ip || rData.ip).trim() : '';
+                if (discIp && (!ip || !ip.includes('://'))) {
+                    ip = discIp;
+                }
                 if (!ip && hass && hass.devices) {
                     const rLower = rName.toLowerCase();
                     for (const dev of Object.values(hass.devices)) {

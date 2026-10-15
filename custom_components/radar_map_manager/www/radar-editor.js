@@ -44,6 +44,10 @@ const EDITOR_I18N = {
         "zh": "⚠️ 硬件限制：当前雷达 ({0}) 不支持【驻留区 (HW Stay)】！\n\n💡 目前仅 LD6004 型号支持此区域。",
         "en": "⚠️ Hardware Limit: Current radar ({0}) does not support [HW Stay Zone]!\n\n💡 Currently only the LD6004 model supports this zone."
     },
+    "hw_stay_overflow_notice": {
+        "zh": "💡 提示：硬件仅支持前 4 个驻留区同步，当前防区将由集成端软件维持。",
+        "en": "💡 Notice: Hardware only supports syncing the first 4 stay zones; this zone will be maintained by software."
+    },
     "calib_prompt": {
         "zh": "请输入这条线段的真实物理长度（米）：\n例如: 4.5",
         "en": "Enter the real physical length of this line (Meters):\nFor example: 4.5"
@@ -59,6 +63,22 @@ const EDITOR_I18N = {
     "auto_block_completed": {
         "zh": "✅ 自动识别排除区完成！已成功同步并更新地图。",
         "en": "✅ Auto Learn Block Zones completed! Map updated successfully."
+    },
+    "layout_saved": {
+        "zh": "✅ 雷达布局参数已保存成功！",
+        "en": "✅ Radar layout parameters saved successfully!"
+    },
+    "zone_saved": {
+        "zh": "✅ 防区配置已成功保存！",
+        "en": "✅ Zone configuration saved successfully!"
+    },
+    "hw_zone_saved_confirmed": {
+        "zh": "✅ 硬件防区已成功保存，并已获得专属硬件二次确认！",
+        "en": "✅ Hardware zones saved and confirmed by exclusive hardware!"
+    },
+    "hw_zone_saved_unconfirmed": {
+        "zh": "✅ 硬件防区已保存至系统，但硬件尚未响应二次确认，请检查雷达在线状态。",
+        "en": "✅ Hardware zones saved to system, but hardware did not confirm. Please check radar connection."
     }
 };
 export class RadarEditor {
@@ -312,6 +332,34 @@ export class RadarEditor {
                 if (callbacks.onLayoutParamChange) callbacks.onLayoutParamChange('mount_height', val);
             };
         }
+        const syncZRange = () => {
+            const elMin = this.root.getElementById('layout-z-min');
+            const elMax = this.root.getElementById('layout-z-max');
+            if (!elMin || !elMax) return;
+            let minVal = parseFloat(elMin.value);
+            let maxVal = parseFloat(elMax.value);
+            if (isNaN(minVal)) minVal = -6.0;
+            if (isNaN(maxVal)) maxVal = 6.0;
+            minVal = Math.max(-6.0, Math.min(6.0, parseFloat(minVal.toFixed(1))));
+            maxVal = Math.max(-6.0, Math.min(6.0, parseFloat(maxVal.toFixed(1))));
+            if (minVal > maxVal) { const tmp = minVal; minVal = maxVal; maxVal = tmp; }
+            elMin.value = minVal;
+            elMax.value = maxVal;
+            if (callbacks.onLayoutParamChange) {
+                callbacks.onLayoutParamChange('z_min', minVal);
+                callbacks.onLayoutParamChange('z_max', maxVal);
+            }
+            if (state.hass && state.radar && state.radar !== 'rd_default') {
+                state.hass.callService("mqtt", "publish", {
+                    topic: `rmm_radar/${state.radar}/z_range/set`,
+                    payload: JSON.stringify({ min: minVal, max: maxVal })
+                }).catch(err => console.warn("Failed to publish z_range/set:", err));
+            }
+        };
+        const elZMin = this.root.getElementById('layout-z-min');
+        const elZMax = this.root.getElementById('layout-z-max');
+        if (elZMin) elZMin.onchange = syncZRange;
+        if (elZMax) elZMax.onchange = syncZRange;
         bindStepper(this, 'btn-sx-minus', 'layout-sx', -0.1, callbacks, 'scale_x');
         bindStepper(this, 'btn-sx-plus', 'layout-sx', 0.1, callbacks, 'scale_x');
         bindStepper(this, 'btn-sy-minus', 'layout-sy', -0.1, callbacks, 'scale_y');
@@ -382,7 +430,9 @@ export class RadarEditor {
                 defaultName = state.radar;
                 const rConf = state.data[state.radar] || {};
                 defaultPin = rConf.device_pin || "";
-                defaultIp = rConf.radar_ip || rConf.ip || "";
+                const discIp = (this.host?.fullRawData?.discovered_radars?.[state.radar]?.ip || '').trim();
+                let confIp = (rConf.radar_ip || rConf.ip || '').trim();
+                defaultIp = (discIp && (!confIp || !confIp.includes('://'))) ? discIp : confIp;
                 titleKey = "modal_edit_title";
                 if (!defaultIp && state.hass && state.hass.devices) {
                     const rLower = state.radar.toLowerCase();
@@ -433,7 +483,7 @@ export class RadarEditor {
                 html += `<div style="font-size:13px; font-weight:bold; color:var(--secondary-text-color, #666); margin-bottom:10px;">${this.t('modal_discovered')}</div>`;
                 html += `<div style="display:flex; flex-direction:column; gap:8px; margin-bottom:20px; max-height:160px; overflow-y:auto; padding-right:5px;">`;
                 discovered.forEach(d => {
-                    html += `<button type="button" class="btn-discovered" data-name="${d.name}" style="padding:8px 12px; text-align:left; border:1px solid var(--primary-color, #03a9f4); background:transparent; color:var(--primary-color, #03a9f4); border-radius:8px; cursor:pointer; font-size:14px; font-weight:bold; transition:all 0.2s;">${d.label}</button>`;
+                    html += `<button type="button" class="btn-discovered" data-name="${d.name}" data-ip="${d.ip || ''}" style="padding:8px 16px; text-align:left; border:1px solid var(--primary-color, #03a9f4); background:transparent; color:var(--primary-color, #03a9f4); border-radius:9999px; cursor:pointer; font-size:14px; font-weight:bold; transition:all 0.2s;">${d.label}</button>`;
                 });
                 html += `</div>`;
             } else {
@@ -447,14 +497,14 @@ export class RadarEditor {
                 <div style="background:var(--secondary-background-color, #f5f5f5); border:1px solid var(--divider-color, #e0e0e0); border-radius:8px; padding:12px; margin-bottom:15px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
                         <span style="font-size:13px; font-weight:bold; color:var(--primary-text-color, #333);">${this.t('pair_box_title')}</span>
-                        <span id="rmm-pair-status-badge" style="font-size:11px; font-weight:bold; padding:2px 8px; border-radius:4px; display:none;"></span>
+                        <span id="rmm-pair-status-badge" style="font-size:11px; font-weight:bold; padding:2px 8px; border-radius:9999px; display:none;"></span>
                     </div>
                     <p style="font-size:12px; color:var(--secondary-text-color, #666); margin:0 0 10px 0; line-height:1.4;">
                         ${this.t('pair_box_desc')}
                     </p>
                     <div style="display:flex; gap:8px;">
-                        <button type="button" id="rmm-btn-start-pair" style="flex:1; padding:9px 12px; border:none; background:var(--warning-color, #ff9800); color:#fff; border-radius:6px; cursor:pointer; font-size:13px; font-weight:bold; transition:all 0.2s;">${this.t('pair_btn_start')}</button>
-                        <button type="button" id="rmm-btn-cancel-pair" style="display:none; padding:9px 14px; border:1px solid var(--error-color, #f44336); background:transparent; color:var(--error-color, #f44336); border-radius:6px; cursor:pointer; font-size:13px; font-weight:bold; transition:all 0.2s;">${this.t('pair_btn_cancel')}</button>
+                        <button type="button" id="rmm-btn-start-pair" style="flex:1; padding:9px 16px; border:none; background:var(--warning-color, #ff9800); color:#fff; border-radius:9999px; cursor:pointer; font-size:13px; font-weight:bold; transition:all 0.2s;">${this.t('pair_btn_start')}</button>
+                        <button type="button" id="rmm-btn-cancel-pair" style="display:none; padding:9px 16px; border:1px solid var(--error-color, #f44336); background:transparent; color:var(--error-color, #f44336); border-radius:9999px; cursor:pointer; font-size:13px; font-weight:bold; transition:all 0.2s;">${this.t('pair_btn_cancel')}</button>
                     </div>
                 </div>
                 <label style="display:block; font-size:13px; font-weight:bold; margin-bottom:5px;">${this.t('modal_lbl_pin')} <span style="font-size:11px; font-weight:normal; color:var(--secondary-text-color, #888);">${this.t('pair_manual_hint')}</span></label>
@@ -462,8 +512,8 @@ export class RadarEditor {
                 <label style="display:block; font-size:13px; font-weight:bold; margin-bottom:5px;">${this.t('modal_lbl_ip')}</label>
                 <input type="text" id="rmm-input-ip" value="${defaultIp}" placeholder="例如: 192.168.1.100" style="width:100%; box-sizing:border-box; padding:10px; border:1px solid var(--divider-color, #ccc); border-radius:6px; margin-bottom:25px; background:var(--secondary-background-color, #fafafa); color:var(--primary-text-color, #333); font-size:14px; outline:none;">
                 <div style="display:flex; justify-content:flex-end; gap:12px;">
-                    <button type="button" id="rmm-btn-cancel" style="padding:10px 18px; border:none; background:var(--disabled-text-color, #ccc); color:#fff; border-radius:6px; cursor:pointer; font-size:14px; font-weight:bold; transition:0.2s;">${this.t('modal_btn_cancel')}</button>
-                    <button type="button" id="rmm-btn-confirm" style="padding:10px 18px; border:none; background:var(--primary-color, #03a9f4); color:#fff; border-radius:6px; cursor:pointer; font-size:14px; font-weight:bold; transition:0.2s;">${this.t('modal_btn_confirm')}</button>
+                    <button type="button" id="rmm-btn-cancel" style="padding:10px 20px; border:none; background:var(--disabled-text-color, #ccc); color:#fff; border-radius:9999px; cursor:pointer; font-size:14px; font-weight:bold; transition:0.2s;">${this.t('modal_btn_cancel')}</button>
+                    <button type="button" id="rmm-btn-confirm" style="padding:10px 20px; border:none; background:var(--primary-color, #03a9f4); color:#fff; border-radius:9999px; cursor:pointer; font-size:14px; font-weight:bold; transition:0.2s;">${this.t('modal_btn_confirm')}</button>
                 </div>
             `;
             modalBox.innerHTML = html;
@@ -616,7 +666,7 @@ export class RadarEditor {
                     return;
                 }
                 const lowerName = rawName.trim().toLowerCase();
-                const finalPin = rawPin.trim().toUpperCase(); 
+                const finalPin = rawPin.replace(/[\s-]/g, '').toUpperCase(); 
                 console.log(`RMM Debug: 准备发送数据 - 名称: ${lowerName}, 密码: [${finalPin}]`);
                 if (!isEdit && state.data && state.data[lowerName]) { 
                     alert(this.t("dup_name", lowerName)); 
@@ -713,12 +763,13 @@ export class RadarEditor {
         bindClick('btn-radar-web', async () => {
             if (!state.radar || state.radar === 'rd_default') return alert(this.t("sel_radar"));
             const rName = state.radar;
+            const discIp = (this.host?.fullRawData?.discovered_radars?.[rName]?.ip || '').trim();
             let ip = (state.data[rName]?.radar_ip || state.data[rName]?.ip || '').trim();
+            if (discIp && (!ip || !ip.includes('://'))) {
+                ip = discIp;
+            }
             const stored = localStorage.getItem('rmm_panel_lang');
             const isZh = (stored === 'zh' || (!stored && state.hass?.language?.startsWith('zh')));
-            if (!ip && this.host?.fullRawData?.discovered_radars?.[rName]?.ip) {
-                ip = this.host.fullRawData.discovered_radars[rName].ip.trim();
-            }
             const rLower = rName.toLowerCase();
             if (!ip && state.hass?.devices) {
                 for (const dev of Object.values(state.hass.devices)) {
@@ -834,6 +885,59 @@ export class RadarEditor {
         };
         if (inName) inName.oninput = updateZoneProps;
         if (inDelay) inDelay.oninput = updateZoneProps;
+        const chkCustomZ = this.root.getElementById('chk-zone-custom-z');
+        const inZMin = this.root.getElementById('in-zone-z-min');
+        const inZMax = this.root.getElementById('in-zone-z-max');
+        const boxZInputs = this.root.getElementById('box-zone-z-inputs');
+        const boxZGlobal = this.root.getElementById('box-zone-z-global');
+        if (chkCustomZ) {
+            chkCustomZ.onchange = () => {
+                if (state.selectedIndex !== null) {
+                    const list = getActiveList(state);
+                    if (list && list[state.selectedIndex]) {
+                        const z = list[state.selectedIndex];
+                        const isFollowGlobal = chkCustomZ.checked;
+                        z.custom_z = !isFollowGlobal;
+                        const lblCustomZ = this.root.getElementById('lbl-zone-custom-z');
+                        if (lblCustomZ) {
+                            lblCustomZ.style.display = 'inline';
+                            lblCustomZ.innerText = (state.lang === 'zh' || !state.lang ? '跟随全局' : 'Global');
+                        }
+                        if (boxZInputs) boxZInputs.style.display = z.custom_z ? 'flex' : 'none';
+                        if (boxZGlobal) boxZGlobal.style.display = z.custom_z ? 'none' : 'flex';
+                        if (z.custom_z) {
+                            if (z.z_min === undefined) z.z_min = inZMin ? (parseFloat(inZMin.value) || -6.0) : -6.0;
+                            if (z.z_max === undefined) z.z_max = inZMax ? (parseFloat(inZMax.value) || 6.0) : 6.0;
+                        }
+                        state.hasUnsavedChanges = true;
+                        this.ui.updateStatus(state, config);
+                    }
+                }
+            };
+        }
+        const updateZCoords = () => {
+            if (state.selectedIndex !== null && inZMin && inZMax) {
+                const list = getActiveList(state);
+                if (list && list[state.selectedIndex]) {
+                    const z = list[state.selectedIndex];
+                    const zm = parseFloat(inZMin.value);
+                    const zM = parseFloat(inZMax.value);
+                    if (!isNaN(zm)) z.z_min = zm;
+                    if (!isNaN(zM)) z.z_max = zM;
+                    z.custom_z = true;
+                    state.hasUnsavedChanges = true;
+                    this.ui.updateStatus(state, config);
+                }
+            }
+        };
+        if (inZMin) {
+            inZMin.oninput = updateZCoords;
+            inZMin.onchange = updateZCoords;
+        }
+        if (inZMax) {
+            inZMax.oninput = updateZCoords;
+            inZMax.onchange = updateZCoords;
+        }
         this.root.addEventListener('zone-select', (e) => {
             exitAddMode();
             if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'SELECT')) {
@@ -953,7 +1057,8 @@ export class RadarEditor {
                                 }
                             }
                         }
-                        if (maxHwZones === 0 || (isCreatingNew && list.length >= maxHwZones)) {
+                        const isLD6004Stay = (state.radar_zone_type === 'hw_stay_zones' && caps.model === 'LD6004');
+                        if (maxHwZones === 0 || (!isLD6004Stay && isCreatingNew && list.length >= maxHwZones)) {
                             alert(this.t("hw_limit", maxHwZones));
                             state.points = []; state.isAddingNew = false;
                             this.renderer.draw(state, config, state.hass);
@@ -964,7 +1069,8 @@ export class RadarEditor {
                     if (!n) {
                         if (state.editMode === 'layout') {
                             const isHWB = state.radar_zone_type === 'hw_block_zones';
-                            n = isHWB ? `HW Block ${list.length + 1}` : (state.radar_zone_type === 'hw_detect_zones' ? `HW Detect ${list.length + 1}` : (state.radar_zone_type === 'hw_stay_zones' ? `HW Stay ${list.length + 1}` : `Monitor ${list.length + 1}`));
+                            const stayDefaultName = (list.length >= 4) ? `Stay ${list.length + 1}` : `HW Stay ${list.length + 1}`;
+                            n = isHWB ? `HW Block ${list.length + 1}` : (state.radar_zone_type === 'hw_detect_zones' ? `HW Detect ${list.length + 1}` : (state.radar_zone_type === 'hw_stay_zones' ? stayDefaultName : `Monitor ${list.length + 1}`));
                         } else {
                             n = `Zone ${list.length + 1}`;
                         }
@@ -976,18 +1082,37 @@ export class RadarEditor {
                         return normalize(z.name) === targetSlug;
                     });
                     if (isDuplicate) { alert(this.t("name_conflict", n)); return; }
+                    const chkCustomZ = this.root.getElementById('chk-zone-custom-z');
+                    const inZMin = this.root.getElementById('in-zone-z-min');
+                    const inZMax = this.root.getElementById('in-zone-z-max');
+                    const isFollowGlobal = chkCustomZ ? chkCustomZ.checked : true;
+                    const isCustomZ = !isFollowGlobal;
+                    const zMin = inZMin ? (parseFloat(inZMin.value) || -6.0) : -6.0;
+                    const zMax = inZMax ? (parseFloat(inZMax.value) || 6.0) : 6.0;
                     if (state.points.length >= 3) {
-                        list.push({ name: n, delay: d, points: [...state.points] });
+                        const newZone = { name: n, delay: d, points: [...state.points] };
+                        if (isCustomZ) {
+                            newZone.custom_z = true;
+                            newZone.z_min = zMin;
+                            newZone.z_max = zMax;
+                        } else {
+                            newZone.custom_z = false;
+                        }
+                        list.push(newZone);
                         state.points = [];
                         state.selectedIndex = list.length - 1;
                     } else if (state.selectedIndex !== null && list[state.selectedIndex]) {
                         list[state.selectedIndex].name = n;
                         list[state.selectedIndex].delay = d;
+                        if (chkCustomZ) {
+                            list[state.selectedIndex].custom_z = isCustomZ;
+                            if (isCustomZ) {
+                                list[state.selectedIndex].z_min = zMin;
+                                list[state.selectedIndex].z_max = zMax;
+                            }
+                        }
                     } else {
                         alert(this.t("draw_3")); return;
-                    }
-                    if (state.editMode === 'layout' && state.radar_zone_type === 'hw_stay_zones') {
-                        list.forEach(z => { z.delay = d; });
                     }
                     state.hasUnsavedChanges = false;
                     state.selectedPointIndex = null;
@@ -1004,7 +1129,8 @@ export class RadarEditor {
                         if (radarData.capabilities && radarData.auth_passed !== true) { alert(this.t("auth_fail_alert")); return; }
                         const caps = radarData.capabilities || {};
                         const maxHwZones = caps.max_hw_zones !== undefined ? caps.max_hw_zones : 3; 
-                        if (list.length >= maxHwZones) {
+                        const isLD6004Stay = (state.radar_zone_type === 'hw_stay_zones' && caps.model === 'LD6004');
+                        if (!isLD6004Stay && list.length >= maxHwZones) {
                             alert(this.t("hw_limit", maxHwZones));
                             return; 
                         }
@@ -1017,7 +1143,9 @@ export class RadarEditor {
                         const nextIdx = list.length + 1; 
                         if (state.editMode === 'layout' && state.radar_zone_type === 'hw_block_zones') { inName.value = `HW Block ${nextIdx}`; } 
                         else if (state.editMode === 'layout' && state.radar_zone_type === 'hw_detect_zones') { inName.value = `HW Detect ${nextIdx}`; } 
-                        else if (state.editMode === 'layout' && state.radar_zone_type === 'hw_stay_zones') { inName.value = `HW Stay ${nextIdx}`; } 
+                        else if (state.editMode === 'layout' && state.radar_zone_type === 'hw_stay_zones') { 
+                            inName.value = (nextIdx > 4) ? `Stay ${nextIdx}` : `HW Stay ${nextIdx}`; 
+                        } 
                         else if (state.editMode === 'layout') { inName.value = `Monitor ${nextIdx}`; } 
                         else { inName.value = `Zone ${nextIdx}`; }
                     }
@@ -1319,8 +1447,8 @@ export class RadarEditor {
                                 <p style="font-size:14px; color:var(--secondary-text-color, #666); white-space:pre-wrap; margin-bottom:20px;">${this.t("calib_prompt")}</p>
                                 <input type="number" id="rmm-calib-len" step="0.1" placeholder="e.g. 4.5" style="width:100%; box-sizing:border-box; padding:12px; border:2px solid var(--primary-color, #03a9f4); border-radius:6px; font-size:16px; text-align:center; margin-bottom:20px; outline:none; background:var(--secondary-background-color, #fafafa); color:var(--primary-text-color, #333);">
                                 <div style="display:flex; gap:12px;">
-                                    <button id="rmm-btn-cancel" style="flex:1; padding:12px; border:none; background:var(--disabled-text-color, #ccc); color:#fff; border-radius:6px; font-weight:bold; cursor:pointer;">Cancel</button>
-                                    <button id="rmm-btn-ok" style="flex:1; padding:12px; border:none; background:var(--primary-color, #03a9f4); color:#fff; border-radius:6px; font-weight:bold; cursor:pointer;">Confirm</button>
+                                    <button id="rmm-btn-cancel" style="flex:1; padding:12px; border:none; background:var(--disabled-text-color, #ccc); color:#fff; border-radius:9999px; font-weight:bold; cursor:pointer;">Cancel</button>
+                                    <button id="rmm-btn-ok" style="flex:1; padding:12px; border:none; background:var(--primary-color, #03a9f4); color:#fff; border-radius:9999px; font-weight:bold; cursor:pointer;">Confirm</button>
                                 </div>
                             </div>
                         `;

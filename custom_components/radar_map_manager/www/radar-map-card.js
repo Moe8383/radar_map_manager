@@ -1,7 +1,7 @@
 import { RadarMath } from './radar-math.js?v=1.2.4';
-import { RadarUI } from './radar-ui.js?v=1.2.7';
+import { RadarUI } from './radar-ui.js?v=1.3.0';
 import { RadarRenderer } from './radar-renderer.js?v=1.2.5'; 
-import { RadarEditor } from './radar-editor.js?v=1.2.7';
+import { RadarEditor } from './radar-editor.js?v=1.3.0';
 const CARD_I18N = {
     "proxy_ok": { "zh": "[RMM VIP] 雷达 {0} 代理认证成功！专属高频点云已通过 HA 隧道激活。", "en": "[RMM VIP] Radar {0} proxy auth successful! Exclusive high-frequency point cloud activated via HA tunnel." },
     "proxy_fail": { "zh": "[RMM VIP] 代理中继连接失败 ({0})，已静默降级为 MQTT 模式。", "en": "[RMM VIP] Proxy relay connection failed ({0}), silently downgraded to MQTT mode." }
@@ -271,8 +271,22 @@ class RadarMapCardNative extends HTMLElement {
             if (['global_zones', 'global_config', 'fused_targets'].includes(rName)) continue;
             const pin = rConf.device_pin;
             if (!pin) continue;
-            if (!this.wsConnections[rName] || (!this.wsConnections[rName].unsubscribe && !this.wsConnections[rName].isConnecting)) {
-                if (this.wsConnections[rName] && this.wsConnections[rName].nextRetry && Date.now() < this.wsConnections[rName].nextRetry) {
+            const curIp = (rConf.radar_ip || rConf.ip || '').trim();
+            if (this.wsConnections[rName]?.lastIp && curIp && this.wsConnections[rName].lastIp !== curIp) {
+                console.log(`RMM: 雷达 ${rName} IP 已变更为 ${curIp}，重新建立隧道`);
+                if (this.wsConnections[rName].unsubscribe) {
+                    try { this.wsConnections[rName].unsubscribe(); } catch(e) {}
+                    this.wsConnections[rName].unsubscribe = null;
+                }
+                this.wsConnections[rName].isConnecting = false;
+                this.wsConnections[rName].nextRetry = 0;
+            }
+            if (!this.wsConnections[rName]) {
+                this.wsConnections[rName] = {};
+            }
+            this.wsConnections[rName].lastIp = curIp;
+            if (!this.wsConnections[rName].unsubscribe && !this.wsConnections[rName].isConnecting) {
+                if (this.wsConnections[rName].nextRetry && Date.now() < this.wsConnections[rName].nextRetry) {
                     continue;
                 }
                 this.connectWS(rName);
@@ -504,9 +518,52 @@ class RadarMapCardNative extends HTMLElement {
                 that.state.isAddingNew = false;
                 that.state.hasUnsavedChanges = false;
                 that.state.selectedPointIndex = null;
-                await that.saveToBackend();
-                that.ui.updateStatus(that.state, that.config);
-                that.renderer.draw(that.state, that.config, that._hass);
+                const isHwZone = (that.state.editMode === 'layout' && ['hw_detect_zones', 'hw_block_zones', 'hw_stay_zones'].includes(that.state.radar_zone_type));
+                const currentRadar = that.state.radar;
+                const radarData = (that.state.data && that.state.data[currentRadar]) || {};
+                const isExclusiveHw = isHwZone && !!(radarData.capabilities && radarData.auth_passed === true);
+                try {
+                    if (isExclusiveHw && that._hass && that._hass.connection) {
+                        let unsub = null;
+                        let isCleanedUp = false;
+                        const confirmPromise = new Promise((resolve) => {
+                            that._hass.connection.subscribeEvents((event) => {
+                                const evRadar = (event.data && (event.data.radar || event.data.radar_name || '')) + '';
+                                if (evRadar.toLowerCase() === (currentRadar || '').toLowerCase()) {
+                                    resolve(true);
+                                }
+                            }, "rmm_hw_zone_confirmed").then(u => {
+                                if (isCleanedUp && u) {
+                                    try { u(); } catch(e) {}
+                                } else {
+                                    unsub = u;
+                                }
+                            }).catch(() => {});
+                            setTimeout(() => resolve(false), 2000);
+                        });
+                        await that.saveToBackend();
+                        that.ui.updateStatus(that.state, that.config);
+                        that.renderer.draw(that.state, that.config, that._hass);
+                        const ok = await confirmPromise;
+                        isCleanedUp = true;
+                        if (unsub) {
+                            try { unsub(); } catch(e) {}
+                        }
+                        if (ok) {
+                            alert(that.editor.t("hw_zone_saved_confirmed"));
+                        } else {
+                            alert(that.editor.t("hw_zone_saved_unconfirmed"));
+                        }
+                    } else {
+                        await that.saveToBackend();
+                        that.ui.updateStatus(that.state, that.config);
+                        that.renderer.draw(that.state, that.config, that._hass);
+                        alert(that.editor.t("zone_saved"));
+                    }
+                } catch (err) {
+                    console.error("RMM: onSaveZoneConfig failed:", err);
+                    alert(that.editor.t("ha_reject") + (err.message || err));
+                }
             },
             onToggleFOV: () => { 
                 if (that.state.fov_edit_mode && that.state.editMode === 'layout' && (that.state.radar_zone_type === 'hw_detect_zones' || that.state.radar_zone_type === 'hw_block_zones' || that.state.radar_zone_type === 'hw_stay_zones' || that.state.radar_zone_type === 'monitor_zones')) {
@@ -570,12 +627,30 @@ class RadarMapCardNative extends HTMLElement {
                         }
                     }
                 }
-                await that._hass.callService('radar_map_manager', 'update_radar_layout', {
-                    radar_name: that.state.radar, layout: newLayout, map_group: that.state.mapGroup
-                });
-                that.state.layoutChanges = {};
-                that.state.hasUnsavedChanges = false;
-                that.fetchData(true);
+                if (that.state.layoutChanges.z_min !== undefined || that.state.layoutChanges.z_max !== undefined ||
+                    newLayout.z_min !== undefined || newLayout.z_max !== undefined) {
+                    const zMin = newLayout.z_min !== undefined ? parseFloat(newLayout.z_min) : (that.state.layoutChanges.z_min !== undefined ? parseFloat(that.state.layoutChanges.z_min) : -6.0);
+                    const zMax = newLayout.z_max !== undefined ? parseFloat(newLayout.z_max) : (that.state.layoutChanges.z_max !== undefined ? parseFloat(that.state.layoutChanges.z_max) : 6.0);
+                    if (!isNaN(zMin) && !isNaN(zMax)) {
+                        that._hass.callService("mqtt", "publish", {
+                            topic: `rmm_radar/${that.state.radar}/z_range/set`,
+                            payload: JSON.stringify({ min: zMin, max: zMax }),
+                            retain: true
+                        }).catch(e => console.warn("Failed to publish z_range in onSaveLayout:", e));
+                    }
+                }
+                try {
+                    await that._hass.callService('radar_map_manager', 'update_radar_layout', {
+                        radar_name: that.state.radar, layout: newLayout, map_group: that.state.mapGroup
+                    });
+                    that.state.layoutChanges = {};
+                    that.state.hasUnsavedChanges = false;
+                    that.fetchData(true);
+                    alert(that.editor.t("layout_saved"));
+                } catch (err) {
+                    console.error("RMM: onSaveLayout failed:", err);
+                    alert(that.editor.t("ha_reject") + (err.message || err));
+                }
             },
             onCalibrationToggle: () => {
                 if (that.state.calibration.active) {
@@ -674,6 +749,7 @@ class RadarMapCardNative extends HTMLElement {
         } catch (err) {
             console.error("RMM: saveToBackend failed:", err);
             this.ignoreUpdatesUntil = 0;
+            throw err;
         }
     }
     enterEditMode(h) {
@@ -705,22 +781,18 @@ class RadarMapCardNative extends HTMLElement {
         }
     }
 }
-
 function registerCard() {
-  if (!customElements.get("radar-map-card")) {
-    customElements.define("radar-map-card", RadarMapCardNative);
-  }
-
-  window.customCards = window.customCards || [];
-
-  if (!window.customCards.some(card => card.type === "radar-map-card")) {
-    window.customCards.push({
-      type: "radar-map-card",
-      name: "Radar Map Manager",
-      preview: false,
-      description: "Advanced visual editor for radar fusion and zones."
-    });
-  }
+    if (!customElements.get('radar-map-card')) {
+        customElements.define('radar-map-card', RadarMapCardNative);
+    }
+    window.customCards = window.customCards || [];
+    if (!window.customCards.some(c => c.type === 'radar-map-card')) {
+        window.customCards.push({
+          type: "radar-map-card",
+          name: "Radar Map Manager",
+          preview: false, 
+          description: "Advanced visual editor for radar fusion and zones."
+        });
+    }
 }
-
 registerCard();
