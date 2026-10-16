@@ -1186,7 +1186,8 @@ export class RadarUI {
             }
             if (ptX) ptX.value = '';
             if (ptY) ptY.value = '';
-            if (rowZRange) rowZRange.style.display = 'none';
+            const rowZRangeSafe = rowZRange || (this.root ? this.root.getElementById('row-zone-z-range') : null);
+            if (rowZRangeSafe) rowZRangeSafe.style.display = 'none';
             const ptEditor = this.root.getElementById('pt-editor');
             if (ptEditor) {
                 ptEditor.style.display = 'flex';

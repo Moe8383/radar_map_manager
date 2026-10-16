@@ -1,7 +1,7 @@
-import { RadarMath } from './radar-math.js?v=1.2.4';
-import { RadarUI } from './radar-ui.js?v=1.3.0';
-import { RadarRenderer } from './radar-renderer.js?v=1.2.5'; 
-import { RadarEditor } from './radar-editor.js?v=1.3.0';
+import { RadarMath } from './radar-math.js?v=1.3.11';
+import { RadarUI } from './radar-ui.js?v=1.3.11';
+import { RadarRenderer } from './radar-renderer.js?v=1.3.11'; 
+import { RadarEditor } from './radar-editor.js?v=1.3.11';
 const CARD_I18N = {
     "proxy_ok": { "zh": "[RMM VIP] 雷达 {0} 代理认证成功！专属高频点云已通过 HA 隧道激活。", "en": "[RMM VIP] Radar {0} proxy auth successful! Exclusive high-frequency point cloud activated via HA tunnel." },
     "proxy_fail": { "zh": "[RMM VIP] 代理中继连接失败 ({0})，已静默降级为 MQTT 模式。", "en": "[RMM VIP] Proxy relay connection failed ({0}), silently downgraded to MQTT mode." }
@@ -525,27 +525,36 @@ class RadarMapCardNative extends HTMLElement {
                 try {
                     if (isExclusiveHw && that._hass && that._hass.connection) {
                         let unsub = null;
-                        let isCleanedUp = false;
+                        let timer = null;
+                        let resolved = false;
+                        let resolveConfirm = null;
                         const confirmPromise = new Promise((resolve) => {
-                            that._hass.connection.subscribeEvents((event) => {
+                            resolveConfirm = resolve;
+                            timer = setTimeout(() => {
+                                if (!resolved) {
+                                    resolved = true;
+                                    resolve(false);
+                                }
+                            }, 5000); 
+                        });
+                        try {
+                            unsub = await that._hass.connection.subscribeEvents((event) => {
                                 const evRadar = (event.data && (event.data.radar || event.data.radar_name || '')) + '';
                                 if (evRadar.toLowerCase() === (currentRadar || '').toLowerCase()) {
-                                    resolve(true);
+                                    if (!resolved) {
+                                        resolved = true;
+                                        if (timer) clearTimeout(timer);
+                                        resolveConfirm(true);
+                                    }
                                 }
-                            }, "rmm_hw_zone_confirmed").then(u => {
-                                if (isCleanedUp && u) {
-                                    try { u(); } catch(e) {}
-                                } else {
-                                    unsub = u;
-                                }
-                            }).catch(() => {});
-                            setTimeout(() => resolve(false), 2000);
-                        });
-                        await that.saveToBackend();
+                            }, "rmm_hw_zone_confirmed");
+                        } catch (subErr) {
+                            console.warn("RMM: subscribeEvents rmm_hw_zone_confirmed failed:", subErr);
+                        }
+                        await that.saveToBackend(true, currentRadar);
                         that.ui.updateStatus(that.state, that.config);
                         that.renderer.draw(that.state, that.config, that._hass);
                         const ok = await confirmPromise;
-                        isCleanedUp = true;
                         if (unsub) {
                             try { unsub(); } catch(e) {}
                         }
@@ -714,7 +723,7 @@ class RadarMapCardNative extends HTMLElement {
             return state.data.global_zones[type];
         }
     }
-    async saveToBackend() {
+    async saveToBackend(allowEmpty = false, targetRadar = null) {
         this.ignoreUpdatesUntil = Date.now() + 3000;
         if (!this.fullRawData) {
             console.error("RMM: Cannot save! fullRawData is missing.");
@@ -730,19 +739,22 @@ class RadarMapCardNative extends HTMLElement {
         Object.keys(this.state.data).forEach(key => {
             if (key === 'global_zones' || key === 'global_config' || key === 'fused_targets') return;
             if (!fullData.radars[key]) fullData.radars[key] = { map_group: currentMapGroup };
-            if (this.state.data[key].monitor_zones) {
+            if (this.state.data[key].monitor_zones !== undefined) {
                 fullData.radars[key].monitor_zones = JSON.parse(JSON.stringify(this.state.data[key].monitor_zones));
             }
-            if (this.state.data[key].hw_detect_zones) fullData.radars[key].hw_detect_zones = JSON.parse(JSON.stringify(this.state.data[key].hw_detect_zones));
-            if (this.state.data[key].hw_block_zones)  fullData.radars[key].hw_block_zones  = JSON.parse(JSON.stringify(this.state.data[key].hw_block_zones));
-            if (this.state.data[key].hw_stay_zones)   fullData.radars[key].hw_stay_zones   = JSON.parse(JSON.stringify(this.state.data[key].hw_stay_zones));
+            if (this.state.data[key].hw_detect_zones !== undefined) fullData.radars[key].hw_detect_zones = JSON.parse(JSON.stringify(this.state.data[key].hw_detect_zones));
+            if (this.state.data[key].hw_block_zones !== undefined)  fullData.radars[key].hw_block_zones  = JSON.parse(JSON.stringify(this.state.data[key].hw_block_zones));
+            if (this.state.data[key].hw_stay_zones !== undefined)   fullData.radars[key].hw_stay_zones   = JSON.parse(JSON.stringify(this.state.data[key].hw_stay_zones));
         });
         this.fullRawData = JSON.parse(JSON.stringify(fullData));
         this.state.hasUnsavedChanges = false;
         try {
-            await this._hass.callService('radar_map_manager', 'import_config', {
+            const svcData = {
                 config_json: JSON.stringify(fullData)
-            });
+            };
+            if (allowEmpty) svcData.allow_empty = true;
+            if (targetRadar) svcData.target_radar = targetRadar;
+            await this._hass.callService('radar_map_manager', 'import_config', svcData);
             setTimeout(() => {
                 this.ignoreUpdatesUntil = 0;
             }, 300);

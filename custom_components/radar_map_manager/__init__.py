@@ -226,13 +226,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         )
     async def broadcast_hw_zones(target_radar=None, allow_empty=False):
         if not coordinator.data or "radars" not in coordinator.data: return
-        radars_to_broadcast = [target_radar] if target_radar else list(coordinator.data.get("radars", {}).keys())
+        if target_radar:
+            target_lower = target_radar.lower()
+            radars_to_broadcast = []
+            for k in coordinator.data.get("radars", {}).keys():
+                if k.lower() == target_lower:
+                    radars_to_broadcast.append(k)
+            if not radars_to_broadcast:
+                radars_to_broadcast = [target_radar]
+        else:
+            radars_to_broadcast = list(coordinator.data.get("radars", {}).keys())
         for r_name in radars_to_broadcast:
             r_conf = coordinator.data.get("radars", {}).get(r_name)
             if not r_conf: continue
             if not r_conf.get("auth_passed", False):
+                _LOGGER.debug(f"RMM: 🛑 [SSOT Guard] 雷达 '{r_name}' 鉴权未通过，跳过硬件防区广播")
                 continue
             caps = r_conf.get("capabilities", {})
+            if not caps or caps.get("max_hw_zones", 0) == 0:
+                cached_caps = hass.data.get(DOMAIN, {}).get("capabilities_cache", {}).get(r_name, {})
+                if cached_caps and cached_caps.get("max_hw_zones", 0) > 0:
+                    caps = cached_caps
+                    r_conf["capabilities"] = caps
             max_zones = caps.get("max_hw_zones", 3)
             if max_zones == 0: continue 
             layout = r_conf.get("layout", {})
@@ -497,6 +512,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                         curr_ip = r_conf.get("radar_ip", "").strip()
                         if cached_ip and (not curr_ip or (curr_ip != cached_ip and "://" not in curr_ip)):
                             r_conf["radar_ip"] = cached_ip
+                        old_r = coordinator.data.get("radars", {}).get(r_name, {}) if coordinator.data else {}
+                        if old_r.get("auth_passed"):
+                            r_conf["auth_passed"] = True
+                        if old_r.get("capabilities") and not r_conf.get("capabilities"):
+                            r_conf["capabilities"] = old_r["capabilities"]
+                        if old_r.get("device_pin") and not r_conf.get("device_pin"):
+                            r_conf["device_pin"] = old_r["device_pin"]
                 coordinator.data = new_data
             else:
                 _LOGGER.info(f"RMM: 检测到单楼层备份文件，正在智能合入至楼层 [{target_map}]...")
@@ -518,8 +540,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                         v["map_group"] = target_map
                         coordinator.data["radars"][k] = v
             await coordinator.async_save()
-            await broadcast_hw_zones()
-            await clear_legacy_monitor_zones()
+            allow_empty = call.data.get("allow_empty", False)
+            target_radar = call.data.get("target_radar")
+            await broadcast_hw_zones(target_radar=target_radar, allow_empty=allow_empty)
             intervals = [m.get("config", {}).get("update_interval", 0.1) for m in coordinator.data.get("maps", {}).values()]
             start_processing_loop(min(intervals) if intervals else 0.1)
             await processor.update(force=True)
@@ -924,6 +947,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             cur_sw_stay = cur_stay[len(new_stay):]
             stay_changed = zones_differ(cur_hw_stay, new_stay)
             combined_stay = list(new_stay) + list(cur_sw_stay)
+            hass.bus.async_fire(
+                "rmm_hw_zone_confirmed", 
+                {"radar": target_key, "radar_name": target_key, "success": True}
+            )
             if detect_changed or block_changed or stay_changed:
                 r_conf["hw_detect_zones"] = new_detect
                 r_conf["hw_block_zones"] = new_block
@@ -939,10 +966,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                     "rmm_hw_zone_state_updated", 
                     {"radar": target_key, "detect": new_detect, "block": new_block, "stay": combined_stay}
                 )
-            hass.bus.async_fire(
-                "rmm_hw_zone_confirmed", 
-                {"radar": target_key, "radar_name": target_key, "success": True}
-            )
         except Exception as e:
             _LOGGER.error(f"RMM: Failed to apply hw_zone_state for {target_key}: {e}")
     @callback

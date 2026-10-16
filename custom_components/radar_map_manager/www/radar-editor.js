@@ -974,11 +974,26 @@ export class RadarEditor {
         });
         bindClick('btn-del-zone', () => {
             if (confirm(this.t("del_zone"))) {
+                if (this.host) this.host.ignoreUpdatesUntil = Date.now() + 5000;
+                state.hasUnsavedChanges = true;
                 const list = getActiveList(state);
-                if (state.selectedIndex !== null && list[state.selectedIndex]) {
+                if (state.selectedIndex !== null && list && list[state.selectedIndex]) {
                     list.splice(state.selectedIndex, 1); 
+                    state.points = [];
+                    state.selectedIndex = null;
+                    state.selectedPointIndex = null;
                     exitAddMode();
-                    if(callbacks.resetSelection) callbacks.resetSelection();
+                    const inName = this.root.getElementById('in-name');
+                    const inDelay = this.root.getElementById('in-delay');
+                    const ptX = this.root.getElementById('pt-x');
+                    const ptY = this.root.getElementById('pt-y');
+                    if (inName) inName.value = '';
+                    if (inDelay) inDelay.value = '';
+                    if (ptX) ptX.value = '';
+                    if (ptY) ptY.value = '';
+                    if(callbacks.resetSelection) {
+                        try { callbacks.resetSelection(); } catch(e) { console.warn("RMM: resetSelection ignored:", e); }
+                    }
                     if(callbacks.onSaveZoneConfig) callbacks.onSaveZoneConfig(); 
                 }
             }
@@ -994,10 +1009,25 @@ export class RadarEditor {
         });
         bindClick('btn-clear', () => { 
             if(confirm(this.t("clear_all"))) { 
+                if (this.host) this.host.ignoreUpdatesUntil = Date.now() + 5000;
+                state.hasUnsavedChanges = true;
                 const list = getActiveList(state);
-                list.length = 0; 
+                if (list) list.length = 0; 
+                state.points = [];
+                state.selectedIndex = null;
+                state.selectedPointIndex = null;
                 exitAddMode();
-                if(callbacks.resetSelection) callbacks.resetSelection();
+                const inName = this.root.getElementById('in-name');
+                const inDelay = this.root.getElementById('in-delay');
+                const ptX = this.root.getElementById('pt-x');
+                const ptY = this.root.getElementById('pt-y');
+                if (inName) inName.value = '';
+                if (inDelay) inDelay.value = '';
+                if (ptX) ptX.value = '';
+                if (ptY) ptY.value = '';
+                if(callbacks.resetSelection) {
+                    try { callbacks.resetSelection(); } catch(e) { console.warn("RMM: resetSelection ignored:", e); }
+                }
                 if(callbacks.onSaveZoneConfig) callbacks.onSaveZoneConfig(); 
             } 
         });
