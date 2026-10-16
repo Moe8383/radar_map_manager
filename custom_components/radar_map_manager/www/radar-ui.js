@@ -1026,6 +1026,7 @@ export class RadarUI {
         const inDelay = this.root.getElementById('in-delay');
         const ptX = this.root.getElementById('pt-x');
         const ptY = this.root.getElementById('pt-y');
+        const rowZRange = this.root.getElementById('row-zone-z-range');
         const isEditing = (state.editMode === 'zone' || (state.editMode === 'layout' && state.fov_edit_mode));
         const btnSave = this.root.getElementById('btn-save');
         const btnDel = this.root.getElementById('btn-del-zone');
@@ -1061,7 +1062,6 @@ export class RadarUI {
                 let def = (state.editMode === 'layout' && state.radar_zone_type === 'hw_stay_zones') ? 15 : 0;
                 inDelay.value = (z.delay !== undefined && z.delay !== null) ? z.delay : def;
             }
-            const rowZRange = this.root.getElementById('row-zone-z-range');
             const ptEditor = this.root.getElementById('pt-editor');
             const chkCustomZ = this.root.getElementById('chk-zone-custom-z');
             const boxZInputs = this.root.getElementById('box-zone-z-inputs');
