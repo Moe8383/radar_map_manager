@@ -471,7 +471,7 @@ export class RadarUI {
             .radar-handle-rot { cursor: alias; }
             #rmm-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; }
             #dots-layer { display: none !important; }
-            #click-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 3; }
+            #click-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 3; touch-action: none; }
             #edit-ui { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 4; pointer-events: none; }
             #edit-ui.show { display: block; }
             .radar-panel {

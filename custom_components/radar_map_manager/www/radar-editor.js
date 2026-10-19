@@ -1373,7 +1373,7 @@ export class RadarEditor {
                 clickLayer.style.cursor = "grabbing";
                 if (!state.dragState.hasMoved) {
                     state.dragState.hasMoved = true;
-                    if (state.dragState.type === 'point') {
+                    if (state.dragState.type === 'point' || state.dragState.type === 'zone') {
                         state.hasUnsavedChanges = true; 
                     }
                 }
@@ -1413,6 +1413,41 @@ export class RadarEditor {
                         }
                     }
                 }
+                else if (state.dragState.type === 'zone') {
+                    const list = getActiveList(state);
+                    if (list && list[state.dragState.polyIndex]) {
+                        const z = list[state.dragState.polyIndex]; const p = Array.isArray(z) ? z : z.points;
+                        const origPts = state.dragState.origPoints;
+                        if (p && origPts && origPts.length === p.length) {
+                            const minOrigX = Math.min(...origPts.map(pt => pt[0]));
+                            const maxOrigX = Math.max(...origPts.map(pt => pt[0]));
+                            const minOrigY = Math.min(...origPts.map(pt => pt[1]));
+                            const maxOrigY = Math.max(...origPts.map(pt => pt[1]));
+                            let dx = mx - state.dragState.startX;
+                            let dy = my - state.dragState.startY;
+                            const minBoundX = Math.min(0, minOrigX);
+                            const maxBoundX = Math.max(100, maxOrigX);
+                            const minBoundY = Math.min(0, minOrigY);
+                            const maxBoundY = Math.max(100, maxOrigY);
+                            if (minOrigX + dx < minBoundX) dx = minBoundX - minOrigX;
+                            if (maxOrigX + dx > maxBoundX) dx = maxBoundX - maxOrigX;
+                            if (minOrigY + dy < minBoundY) dy = minBoundY - minOrigY;
+                            if (maxOrigY + dy > maxBoundY) dy = maxBoundY - maxOrigY;
+                            for (let k = 0; k < p.length; k++) {
+                                p[k] = [
+                                    parseFloat((origPts[k][0] + dx).toFixed(2)),
+                                    parseFloat((origPts[k][1] + dy).toFixed(2))
+                                ];
+                            }
+                            if (state.selectedPointIndex !== null && p[state.selectedPointIndex]) {
+                                const ptX = this.root.getElementById('pt-x');
+                                const ptY = this.root.getElementById('pt-y');
+                                if (ptX) ptX.value = p[state.selectedPointIndex][0].toFixed(1);
+                                if (ptY) ptY.value = p[state.selectedPointIndex][1].toFixed(1);
+                            }
+                        }
+                    }
+                }
 				this.renderer.draw(state, config, state.hass);
                 return;
             }
@@ -1440,9 +1475,20 @@ export class RadarEditor {
                         }
                     }
                 } else if (!hitPoint) {
-                    for (let i = 0; i < activeList.length; i++) {
-                        const pts = Array.isArray(activeList[i]) ? activeList[i] : activeList[i].points;
-                        if (isPointInPoly(mx, my, pts)) { cursor = "pointer"; break; }
+                    let hitZone = false;
+                    if (state.selectedIndex !== null && activeList[state.selectedIndex]) {
+                        const curZ = activeList[state.selectedIndex];
+                        const curPts = Array.isArray(curZ) ? curZ : curZ.points;
+                        if (isPointInPoly(mx, my, curPts)) {
+                            cursor = "move";
+                            hitZone = true;
+                        }
+                    }
+                    if (!hitZone) {
+                        for (let i = 0; i < activeList.length; i++) {
+                            const pts = Array.isArray(activeList[i]) ? activeList[i] : activeList[i].points;
+                            if (isPointInPoly(mx, my, pts)) { cursor = (state.selectedIndex === i) ? "move" : "pointer"; break; }
+                        }
                     }
                 }
             }
@@ -1594,20 +1640,65 @@ export class RadarEditor {
                 if(hit) break;
             }
             if (!hit) {
-                let hitCandidates = [];
-                for (let i = 0; i < activeList.length; i++) {
-                    const pts = Array.isArray(activeList[i]) ? activeList[i] : activeList[i].points;
-                    if (isPointInPoly(mx, my, pts)) hitCandidates.push({ index: i, area: getArea(pts), obj: activeList[i] });
+                if (state.selectedIndex !== null && activeList[state.selectedIndex]) {
+                    const curZ = activeList[state.selectedIndex];
+                    const curPts = Array.isArray(curZ) ? curZ : curZ.points;
+                    if (isPointInPoly(mx, my, curPts)) {
+                        state.selectedPointIndex = null;
+                        state.dragState = {
+                            isDragging: true,
+                            hasMoved: false,
+                            type: 'zone',
+                            polyIndex: state.selectedIndex,
+                            startX: mx,
+                            startY: my,
+                            origPoints: curPts.map(p => [...p]),
+                            startSnapshot: JSON.stringify(state.data)
+                        };
+                        clickLayer.setPointerCapture(e.pointerId);
+                        setTimeout(() => {
+                            if (callbacks.selectZone) callbacks.selectZone(state.selectedIndex, null, curZ);
+                            this.renderer.draw(state, config, state.hass);
+                        }, 10);
+                        hit = true;
+                    }
                 }
-                if (hitCandidates.length > 0) {
-                    hitCandidates.sort((a, b) => a.area - b.area);
-                    setTimeout(() => {
-                        this._checkUnsaved(state, callbacks, () => {
-                            if(callbacks.selectZone) callbacks.selectZone(hitCandidates[0].index, null, hitCandidates[0].obj);
-                        });
-                        this.renderer.draw(state, config, state.hass); 
-                    }, 10);
-                    hit = true;
+                if (!hit) {
+                    let hitCandidates = [];
+                    for (let i = 0; i < activeList.length; i++) {
+                        const pts = Array.isArray(activeList[i]) ? activeList[i] : activeList[i].points;
+                        if (isPointInPoly(mx, my, pts)) hitCandidates.push({ index: i, area: getArea(pts), obj: activeList[i] });
+                    }
+                    if (hitCandidates.length > 0) {
+                        hitCandidates.sort((a, b) => a.area - b.area);
+                        const chosen = hitCandidates[0];
+                        if (state.hasUnsavedChanges) {
+                            setTimeout(() => {
+                                this._checkUnsaved(state, callbacks, () => {
+                                    if(callbacks.selectZone) callbacks.selectZone(chosen.index, null, chosen.obj);
+                                    this.renderer.draw(state, config, state.hass); 
+                                });
+                            }, 10);
+                        } else {
+                            const chosenPts = Array.isArray(chosen.obj) ? chosen.obj : chosen.obj.points;
+                            state.dragState = {
+                                isDragging: true,
+                                hasMoved: false,
+                                type: 'zone',
+                                polyIndex: chosen.index,
+                                startX: mx,
+                                startY: my,
+                                origPoints: chosenPts.map(p => [...p]),
+                                startSnapshot: JSON.stringify(state.data)
+                            };
+                            clickLayer.setPointerCapture(e.pointerId);
+                            setTimeout(() => {
+                                if(callbacks.selectZone) callbacks.selectZone(chosen.index, null, chosen.obj);
+                                this.renderer.draw(state, config, state.hass); 
+                            }, 10);
+                        }
+                        hit = true;
+                    }
                 }
             }
             if (!hit) {
@@ -1660,7 +1751,7 @@ export class RadarEditor {
                         state.historyStack.push(JSON.parse(state.dragState.startSnapshot)); 
                         if (state.historyStack.length > 10) state.historyStack.shift(); 
                     }
-                    if (state.dragState.type === 'point') {
+                    if (state.dragState.type === 'point' || state.dragState.type === 'zone') {
                         state.hasUnsavedChanges = true; 
                     }
                 } else {
@@ -1671,6 +1762,7 @@ export class RadarEditor {
                 clickLayer.releasePointerCapture(e.pointerId); 
                 clickLayer.style.cursor = "default";
                 this.ui.updateStatus(state, config);
+                this.renderer.draw(state, config, state.hass);
             }
         };
     }

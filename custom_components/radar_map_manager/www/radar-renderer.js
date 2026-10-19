@@ -710,7 +710,7 @@ export class RadarRenderer {
                             showThisLabel = false;
                         }
                     }
-                    if (isSelZone) { strokeColor = color; strokeWidth = zoneStroke * 2; fillOpacity = 0.6; }
+                    if (isSelZone) { strokeColor = color; strokeWidth = zoneStroke * 2; fillOpacity = 0.6; cursorStyle = 'move'; }
                 } else {
                     ptrEvents = 'none'; fillOpacity = 0.05; strokeOpacity = 0.2; strokeWidth = zoneStroke * 0.3; 
                     showThisLabel = false;
@@ -720,7 +720,7 @@ export class RadarRenderer {
                 if (typeKey === state.type) {
                     fillOpacity = 0.3; ptrEvents = 'all'; 
                     showThisLabel = true; 
-                    if (isSelZone) { strokeColor = color; strokeWidth = zoneStroke * 2; fillOpacity = 0.5; }
+                    if (isSelZone) { strokeColor = color; strokeWidth = zoneStroke * 2; fillOpacity = 0.5; cursorStyle = 'move'; }
                 } else {
                     fillOpacity = 0.05; strokeColor = '#555'; ptrEvents = 'none'; strokeWidth = zoneStroke * 0.3;
                     showThisLabel = false;
