@@ -408,9 +408,9 @@ export class RadarUI {
             container.style.touchAction = "none";
             container.innerHTML = `
                 <div id="map-container"></div>
-                <canvas id="rmm-canvas" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none;"></canvas>
                 <svg id="svg-canvas" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
-                <div id="dots-layer"></div>
+                <canvas id="rmm-canvas" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none;"></canvas>
+                <div id="dots-layer" style="display: none;"></div>
                 <div id="click-layer"></div>
                 <div id="ws-status-dot" title="Connecting..." style="position: absolute; top: 12px; right: 40px; width: 10px; height: 10px; border-radius: 50%; background: #ffc107; box-shadow: 0 0 5px #ffc107; z-index: 5; transition: background 0.3s;"></div>
                 <button id="btn-toggle-mode" title="Toggle Edit Mode">⚙️</button>
@@ -469,7 +469,8 @@ export class RadarUI {
             .zone-handle { cursor: move; }
             .radar-handle-body { cursor: move; }
             .radar-handle-rot { cursor: alias; }
-            #dots-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; }
+            #rmm-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; }
+            #dots-layer { display: none !important; }
             #click-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 3; }
             #edit-ui { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 4; pointer-events: none; }
             #edit-ui.show { display: block; }

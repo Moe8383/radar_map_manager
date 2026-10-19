@@ -1,7 +1,7 @@
-import { RadarMath } from './radar-math.js?v=1.3.11';
-import { RadarUI } from './radar-ui.js?v=1.3.11';
-import { RadarRenderer } from './radar-renderer.js?v=1.3.11'; 
-import { RadarEditor } from './radar-editor.js?v=1.3.11';
+import { RadarMath } from './radar-math.js?v=1.3.14';
+import { RadarUI } from './radar-ui.js?v=1.3.14';
+import { RadarRenderer } from './radar-renderer.js?v=1.3.14'; 
+import { RadarEditor } from './radar-editor.js?v=1.3.14';
 const CARD_I18N = {
     "proxy_ok": { "zh": "[RMM VIP] 雷达 {0} 代理认证成功！专属高频点云已通过 HA 隧道激活。", "en": "[RMM VIP] Radar {0} proxy auth successful! Exclusive high-frequency point cloud activated via HA tunnel." },
     "proxy_fail": { "zh": "[RMM VIP] 代理中继连接失败 ({0})，已静默降级为 MQTT 模式。", "en": "[RMM VIP] Proxy relay connection failed ({0}), silently downgraded to MQTT mode." }
@@ -241,6 +241,10 @@ class RadarMapCardNative extends HTMLElement {
             this.state.data = this._adaptV2ToV1(rawData);
             this.state.historyStack = [];
             this.initWebSockets();
+            this.state.directFusedTargets = this.state.fused_targets || [];
+            if (this.state.editMode === 'zone' || this.state.editMode === 'settings' || !this.state.editing) {
+                this.renderer.updateFusedTargets(this.state.directFusedTargets);
+            }
             this.state.hass = this.getMockHass(this.state.rawHass);
             this.renderer.draw(this.state, this.config, this.state.hass);
             this.ui.updateStatus(this.state, this.config);
@@ -328,8 +332,11 @@ class RadarMapCardNative extends HTMLElement {
                         if (Array.isArray(parsed)) {
                             this.state.wsTargets[rName].targets = parsed;
                             this.state.wsTargets[rName].connected = true;
-                            this.state.hass = this.getMockHass(this.state.rawHass);
-                            requestAnimationFrame(() => this.renderer.draw(this.state, this.config, this.state.hass));
+                            if (!this.state.directTargets) this.state.directTargets = {};
+                            this.state.directTargets[rName] = parsed;
+                            if (this.state.editing && this.state.editMode === 'layout') {
+                                this.renderer.updateRawTargets(rName, parsed);
+                            }
                         }
                         else if (parsed.pc !== undefined || parsed.point_cloud !== undefined || parsed.points !== undefined || (parsed.type === 'point_cloud' && parsed.data !== undefined)) {
                             let pcData = parsed.pc || parsed.point_cloud || parsed.points || parsed.data;
@@ -796,6 +803,11 @@ class RadarMapCardNative extends HTMLElement {
 function registerCard() {
     if (!customElements.get('radar-map-card')) {
         customElements.define('radar-map-card', RadarMapCardNative);
+        console.info(
+            '%c RADAR-MAP-CARD %c Loaded ',
+            'color: white; background: #03a9f4; font-weight: 700; padding: 2px 4px; border-radius: 3px 0 0 3px;',
+            'color: #03a9f4; background: #e1f5fe; font-weight: 700; padding: 2px 4px; border-radius: 0 3px 3px 0;'
+        );
     }
     window.customCards = window.customCards || [];
     if (!window.customCards.some(c => c.type === 'radar-map-card')) {

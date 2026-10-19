@@ -58,3 +58,107 @@ export class RadarMath {
         return inside;
     }
 }
+export class TargetFilter {
+    constructor() {
+        this.tracks = new Map();
+        this.lastFrameTime = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    }
+    update(key, measX, measY, metadata = {}) {
+        const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+        let track = this.tracks.get(key);
+        if (!track) {
+            track = {
+                id: key,
+                x: measX,
+                y: measY,
+                vx: 0,
+                vy: 0,
+                targetX: measX,
+                targetY: measY,
+                lastUpdate: now,
+                alive: true,
+                alpha: 1.0,
+                metadata: metadata,
+                history: [{ x: measX, y: measY, time: now }]
+            };
+            this.tracks.set(key, track);
+            return track;
+        }
+        const dt = Math.max(0.01, Math.min(1.0, (now - track.lastUpdate) / 1000));
+        track.lastUpdate = now;
+        track.alive = true;
+        track.metadata = metadata;
+        const dist = Math.hypot(measX - track.x, measY - track.y);
+        if (dist > 25) {
+            track.x = measX;
+            track.y = measY;
+            track.targetX = measX;
+            track.targetY = measY;
+            track.vx = 0;
+            track.vy = 0;
+            track.history = [{ x: measX, y: measY, time: now }];
+            return track;
+        }
+        const measVx = (measX - track.x) / dt;
+        const measVy = (measY - track.y) / dt;
+        const Kp = 0.55;
+        const Kv = 0.40;
+        track.targetX = measX;
+        track.targetY = measY;
+        track.x += Kp * (measX - track.x);
+        track.y += Kp * (measY - track.y);
+        track.vx = track.vx * (1 - Kv) + measVx * Kv;
+        track.vy = track.vy * (1 - Kv) + measVy * Kv;
+        return track;
+    }
+    step(now) {
+        const dt = Math.max(0.001, Math.min(0.05, (now - this.lastFrameTime) / 1000));
+        this.lastFrameTime = now;
+        const activeTracks = [];
+        for (const [key, track] of this.tracks.entries()) {
+            const timeSinceUpdate = (now - track.lastUpdate) / 1000;
+            if (timeSinceUpdate > 1.8) {
+                track.alpha -= dt * 2.5;
+                if (track.alpha <= 0) {
+                    this.tracks.delete(key);
+                    continue;
+                }
+            } else if (timeSinceUpdate > 0.15) {
+                const toX = track.targetX - track.x;
+                const toY = track.targetY - track.y;
+                track.x += toX * Math.min(1.0, dt * 10);
+                track.y += toY * Math.min(1.0, dt * 10);
+                track.vx *= 0.85;
+                track.vy *= 0.85;
+                track.alpha = 1.0;
+            } else {
+                track.x += track.vx * dt * 0.25;
+                track.y += track.vy * dt * 0.25;
+                track.x += (track.targetX - track.x) * dt * 8;
+                track.y += (track.targetY - track.y) * dt * 8;
+                track.alpha = 1.0;
+            }
+            if (!track.history) track.history = [];
+            const lastHist = track.history[track.history.length - 1];
+            if (!lastHist || Math.hypot(track.x - lastHist.x, track.y - lastHist.y) > 0.4) {
+                track.history.push({ x: track.x, y: track.y, time: now });
+                if (track.history.length > 6) track.history.shift();
+            }
+            activeTracks.push(track);
+        }
+        return activeTracks;
+    }
+    prune(activeKeys) {
+        const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+        for (const [key, track] of this.tracks.entries()) {
+            if (!activeKeys.has(key)) {
+                if ((now - track.lastUpdate) > 0.8) {
+                    this.tracks.delete(key);
+                }
+            }
+        }
+    }
+    clear() {
+        this.tracks.clear();
+    }
+}

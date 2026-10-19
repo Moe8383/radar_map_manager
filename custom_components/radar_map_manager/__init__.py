@@ -17,8 +17,15 @@ from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.components import websocket_api
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
-from homeassistant.components.http import StaticPathConfig
-from homeassistant.components.frontend import add_extra_js_url
+try:
+    from homeassistant.components.http import StaticPathConfig
+except ImportError:
+    StaticPathConfig = None
+try:
+    from homeassistant.components.frontend import add_extra_js_url
+except ImportError:
+    def add_extra_js_url(hass, url, es5=False):
+        pass
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
@@ -149,9 +156,41 @@ def get_t(hass, key, *args):
         try: text = text.format(*args)
         except: pass
     return text
+async def async_register_frontend_resources(hass: HomeAssistant):
+    """注册前端静态资源及 Lovelace 卡片 JS (保证幂等，只注册一次)."""
+    domain_data = hass.data.setdefault(DOMAIN, {})
+    if domain_data.get("frontend_registered"):
+        return
+    www_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "www"))
+    if not os.path.isdir(www_dir):
+        www_dir = hass.config.path("custom_components", DOMAIN, "www")
+    if not os.path.isdir(www_dir):
+        _LOGGER.error("RMM: 未找到前端静态资源目录: %s", www_dir)
+        return
+    try:
+        if hasattr(hass.http, "async_register_static_paths") and StaticPathConfig is not None:
+            await hass.http.async_register_static_paths([
+                StaticPathConfig("/radar_map_manager", www_dir, cache_headers=False)
+            ])
+        elif hasattr(hass.http, "register_static_path"):
+            hass.http.register_static_path("/radar_map_manager", www_dir, cache_headers=False)
+        else:
+            _LOGGER.warning("RMM: 未能在 hass.http 找到静态路径注册方法")
+    except Exception as e:
+        _LOGGER.debug("RMM: 静态路径注册异常 (可能已由其他流程注册): %s", e)
+    def _get_js_version():
+        js_path = os.path.join(www_dir, "radar-map-card.js")
+        return os.path.getmtime(js_path) if os.path.exists(js_path) else time.time()
+    try:
+        js_version = await hass.async_add_executor_job(_get_js_version)
+        add_extra_js_url(hass, f"/radar_map_manager/radar-map-card.js?v={js_version}")
+    except Exception as e:
+        _LOGGER.warning("RMM: 添加 extra_js_url 失败: %s", e)
+    domain_data["frontend_registered"] = True
 async def async_setup(hass: HomeAssistant, config: dict):
     """设置域级配置 (为向后兼容保留，实际入口已转为 async_setup_entry)."""
     hass.data.setdefault(DOMAIN, {})
+    await async_register_frontend_resources(hass)
     return True
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     """当用户从 UI 添加集成时，HA 会调用这里."""
@@ -161,18 +200,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     hass.data[DOMAIN].setdefault("pending_auth", {})
     hass.data[DOMAIN].setdefault("live_data", {})
     hass.data[DOMAIN].setdefault("notified_basic", set())
-    www_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "www"))
-    if not os.path.isdir(www_dir):
-        www_dir = hass.config.path("custom_components", DOMAIN, "www")
-    if hasattr(hass.http, "register_static_path"):
-        hass.http.register_static_path("/radar_map_manager", www_dir, cache_headers=False)
-    else:
-        await hass.http.async_register_static_paths([StaticPathConfig("/radar_map_manager", www_dir, cache_headers=False)])
-    def _get_js_version():
-        js_path = os.path.join(www_dir, "radar-map-card.js")
-        return os.path.getmtime(js_path) if os.path.exists(js_path) else time.time()
-    js_version = await hass.async_add_executor_job(_get_js_version)
-    add_extra_js_url(hass, f"/radar_map_manager/radar-map-card.js?v={js_version}")
+    await async_register_frontend_resources(hass)
     coordinator = RadarCoordinator(hass)
     await coordinator.async_load()
     processor = RadarProcessor(hass, coordinator)

@@ -1,3 +1,4 @@
+import { TargetFilter } from './radar-math.js?v=1.3.14';
 export class RadarRenderer {
     constructor(math, root) {
         this.math = math;
@@ -9,6 +10,7 @@ export class RadarRenderer {
         this.currentConfig = null; 
         this._isCanvasCleared = false; 
         this._domCache = {}; 
+        this.targetFilter = new TargetFilter(); 
     }
     _create(tag, attrs = {}, style = {}) {
         const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
@@ -38,18 +40,294 @@ export class RadarRenderer {
     }
     renderLoop() {
         if (!this.ctx || !this.canvas) return;
-        if (!this.activePointCloud || !this.activePointCloud.points || this.activePointCloud.points.length === 0) {
+        const rw = Math.round(this.canvas.clientWidth || this.canvas.offsetWidth || 0);
+        const rh = Math.round(this.canvas.clientHeight || this.canvas.offsetHeight || 0);
+        if (rw > 0 && rh > 0 && (this.canvas.width !== rw || this.canvas.height !== rh)) {
+            this.canvas.width = rw;
+            this.canvas.height = rh;
+        }
+        const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+        const activeTargets = this.targetFilter ? this.targetFilter.step(now) : [];
+        const hasPointCloud = !!(this.activePointCloud && this.activePointCloud.points && this.activePointCloud.points.length > 0);
+        const hasTargets = activeTargets.length > 0;
+        const hasCalibration = !!(this.currentState?.calibration?.active && this.currentState?.calibration?.map);
+        if (!hasPointCloud && !hasTargets && !hasCalibration) {
             if (!this._isCanvasCleared) {
                 this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-                this._isCanvasCleared = true; 
+                this._isCanvasCleared = true;
             }
             this.animFrameId = requestAnimationFrame(() => this.renderLoop());
-            return; 
+            return;
         }
-        this._isCanvasCleared = false; 
+        this._isCanvasCleared = false;
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        this.drawPointCloud();
+        if (hasPointCloud) {
+            this.drawPointCloud();
+        }
+        if (hasCalibration) {
+            this.drawCalibrationDot();
+        }
+        if (hasTargets) {
+            this.renderCanvasTargets(activeTargets, now);
+        }
         this.animFrameId = requestAnimationFrame(() => this.renderLoop());
+    }
+    drawCalibrationDot() {
+        if (!this.currentState?.calibration?.map || !this.ctx || !this.canvas) return;
+        const tx = this.currentState.calibration.map.x;
+        const ty = this.currentState.calibration.map.y;
+        const scaleX = this.canvas.width / 100;
+        const scaleY = this.canvas.height / 100;
+        const px = tx * scaleX;
+        const py = ty * scaleY;
+        this.ctx.save();
+        this.ctx.shadowColor = 'magenta';
+        this.ctx.shadowBlur = 10;
+        this.ctx.fillStyle = 'magenta';
+        this.ctx.beginPath();
+        this.ctx.arc(px, py, 8, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.strokeStyle = '#ffffff';
+        this.ctx.lineWidth = 2;
+        this.ctx.stroke();
+        this.ctx.restore();
+    }
+    renderCanvasTargets(activeTargets, now) {
+        if (!this.ctx || !this.canvas) return;
+        const scaleX = this.canvas.width / 100;
+        const scaleY = this.canvas.height / 100;
+        if (scaleX <= 0 || scaleY <= 0) return;
+        const config = this.currentConfig || {};
+        const state = this.currentState || {};
+        const globalConfig = (state.data && state.data.global_config) || {};
+        const targetRadius = config.target_radius || 8;
+        const fusedColor = config.fused_color || globalConfig.fused_color || '#FFD700';
+        const isLayoutMode = (state.editing && state.editMode === 'layout');
+        const isTracking = globalConfig.enable_tracking !== false;
+        const showHeading = !isLayoutMode && (globalConfig.show_heading !== undefined ? globalConfig.show_heading : (config.show_heading !== false)) !== false && isTracking;
+        const showLabels = (globalConfig.show_labels !== undefined ? globalConfig.show_labels : config.show_labels) === true && isTracking;
+        const showTrails = !isLayoutMode && (globalConfig.show_trails !== undefined ? globalConfig.show_trails : (config.show_trails !== false)) !== false && isTracking;
+        const currentRadar = state.radar;
+        const globalZones = (state.data && state.data.global_zones) || {};
+        const excludeZones = globalZones.exclude_zones || [];
+        if (showTrails) {
+            for (let tIdx = 0; tIdx < activeTargets.length; tIdx++) {
+                const track = activeTargets[tIdx];
+                const meta = track.metadata || {};
+                if (meta.isHold || meta.isHibernating) continue;
+                if (!track.history || track.history.length <= 1) continue;
+                const trailCol = meta.color || fusedColor;
+                for (let hIdx = 0; hIdx < track.history.length - 1; hIdx++) {
+                    const hPt = track.history[hIdx];
+                    const ageSec = (now - hPt.time) / 1000;
+                    if (ageSec > 1.2) continue;
+                    const trailAlpha = Math.max(0, (1 - ageSec / 1.2) * 0.45 * track.alpha);
+                    if (trailAlpha > 0.01) {
+                        this.ctx.save();
+                        this.ctx.globalAlpha = trailAlpha;
+                        this.ctx.fillStyle = trailCol;
+                        this.ctx.beginPath();
+                        this.ctx.arc(hPt.x * scaleX, hPt.y * scaleY, targetRadius * 0.65, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        this.ctx.restore();
+                    }
+                }
+            }
+        }
+        for (let tIdx = 0; tIdx < activeTargets.length; tIdx++) {
+            const track = activeTargets[tIdx];
+            if (excludeZones.some(z => this._isPointInPoly(track.x, track.y, z))) {
+                continue;
+            }
+            const meta = track.metadata || {};
+            const px = track.x * scaleX;
+            const py = track.y * scaleY;
+            const isHold = !!meta.isHold;
+            const isHibernating = !!meta.isHibernating;
+            const isUnverified = !!meta.isUnverified;
+            const isSelected = isLayoutMode && (meta.radarName === currentRadar || meta.isSelected);
+            const col = meta.color || fusedColor;
+            const r = isSelected ? (targetRadius * 1.3) : targetRadius;
+            this.ctx.save();
+            this.ctx.globalAlpha = 0.35 * track.alpha;
+            this.ctx.fillStyle = '#000000';
+            this.ctx.beginPath();
+            this.ctx.ellipse(px, py + r * 0.45, r * 1.05, r * 0.55, 0, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.restore();
+            this.ctx.save();
+            let baseAlpha = 1.0;
+            if (isHold) baseAlpha = 0.6;
+            else if (isHibernating) baseAlpha = 0.3;
+            else if (isUnverified) baseAlpha = 0.8;
+            this.ctx.globalAlpha = baseAlpha * track.alpha;
+            if (!isHold && !isHibernating) {
+                this.ctx.shadowColor = isSelected ? '#FFFFFF' : col;
+                this.ctx.shadowBlur = isSelected ? 14 : 8;
+            }
+            this.ctx.beginPath();
+            this.ctx.arc(px, py, r, 0, Math.PI * 2);
+            if (isHold || isUnverified) {
+                this.ctx.fillStyle = 'transparent';
+            } else if (isHibernating) {
+                this.ctx.fillStyle = '#555555';
+            } else {
+                this.ctx.fillStyle = col;
+            }
+            this.ctx.fill();
+            if (isHold) {
+                this.ctx.setLineDash([4, 3]);
+                this.ctx.strokeStyle = col;
+                this.ctx.lineWidth = 2;
+            } else if (isUnverified) {
+                this.ctx.setLineDash([]);
+                this.ctx.strokeStyle = '#FF9800';
+                this.ctx.lineWidth = 2;
+            } else if (isHibernating) {
+                this.ctx.setLineDash([]);
+                this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+                this.ctx.lineWidth = 1;
+            } else if (isSelected) {
+                this.ctx.setLineDash([]);
+                this.ctx.strokeStyle = '#FFFFFF';
+                this.ctx.lineWidth = 2.5;
+            } else {
+                this.ctx.setLineDash([]);
+                this.ctx.strokeStyle = '#FFFFFF';
+                this.ctx.lineWidth = 1.5;
+            }
+            this.ctx.stroke();
+            this.ctx.setLineDash([]);
+            this.ctx.restore();
+            if (showHeading && !isHold && !isHibernating) {
+                const speed = Math.hypot(track.vx, track.vy);
+                if (speed > 0.18) {
+                    const angle = Math.atan2(track.vy * scaleY, track.vx * scaleX);
+                    const dist = r + 3;
+                    const tipDist = dist + Math.max(3.5, r * 0.35);
+                    const tipX = px + Math.cos(angle) * tipDist;
+                    const tipY = py + Math.sin(angle) * tipDist;
+                    const wingLen = Math.max(5, r * 0.55);
+                    const wingAngle = Math.PI / 4.5; 
+                    this.ctx.save();
+                    this.ctx.globalAlpha = 0.9 * track.alpha;
+                    this.ctx.shadowColor = '#FFFFFF';
+                    this.ctx.shadowBlur = 4;
+                    this.ctx.strokeStyle = '#FFFFFF';
+                    this.ctx.lineWidth = 1.8;
+                    this.ctx.lineCap = 'round';
+                    this.ctx.lineJoin = 'round';
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(tipX - wingLen * Math.cos(angle - wingAngle), tipY - wingLen * Math.sin(angle - wingAngle));
+                    this.ctx.lineTo(tipX, tipY);
+                    this.ctx.lineTo(tipX - wingLen * Math.cos(angle + wingAngle), tipY - wingLen * Math.sin(angle + wingAngle));
+                    this.ctx.stroke();
+                    this.ctx.restore();
+                }
+            }
+            const shouldShowLabel = isLayoutMode || showLabels || meta.label !== undefined;
+            const labelText = meta.label !== undefined ? String(meta.label) : '';
+            if (shouldShowLabel && labelText) {
+                this.ctx.save();
+                this.ctx.globalAlpha = track.alpha;
+                const fontSize = Math.max(7, Math.round(r * (labelText.length > 1 ? 0.72 : 0.90)));
+                this.ctx.font = `700 ${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif`;
+                this.ctx.textAlign = 'center';
+                this.ctx.textBaseline = 'middle';
+                let textCol = '#111111';
+                if (isHold || isUnverified) {
+                    textCol = col || '#FFFFFF';
+                    this.ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
+                    this.ctx.shadowBlur = 3;
+                } else if (isHibernating) {
+                    textCol = '#DDDDDD';
+                    this.ctx.shadowBlur = 0;
+                } else {
+                    let yiq = 200;
+                    if (col && typeof col === 'string') {
+                        if (col.startsWith('#')) {
+                            let c = col.slice(1);
+                            if (c.length === 3 || c.length === 4) c = c.split('').slice(0, 3).map(x => x + x).join('');
+                            if (c.length >= 6) {
+                                const cr = parseInt(c.substr(0, 2), 16);
+                                const cg = parseInt(c.substr(2, 2), 16);
+                                const cb = parseInt(c.substr(4, 2), 16);
+                                yiq = (cr * 299 + cg * 587 + cb * 114) / 1000;
+                            }
+                        } else if (col.startsWith('rgb')) {
+                            const m = col.match(/\d+/g);
+                            if (m && m.length >= 3) {
+                                yiq = (parseInt(m[0]) * 299 + parseInt(m[1]) * 587 + parseInt(m[2]) * 114) / 1000;
+                            }
+                        }
+                    }
+                    textCol = (yiq >= 135) ? '#111111' : '#FFFFFF';
+                    if (textCol === '#FFFFFF') {
+                        this.ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
+                        this.ctx.shadowBlur = 2;
+                    } else {
+                        this.ctx.shadowBlur = 0;
+                    }
+                }
+                this.ctx.fillStyle = textCol;
+                const offsetY = (fontSize <= 10) ? 0.5 : 0;
+                this.ctx.fillText(labelText, px, py + offsetY);
+                this.ctx.restore();
+            }
+        }
+    }
+    updateFusedTargets(fusedList) {
+        if (!this.targetFilter || !Array.isArray(fusedList)) return;
+        const activeKeys = new Set();
+        const globalConfig = (this.currentState?.data && this.currentState.data.global_config) || {};
+        const fusedColor = this.currentConfig?.fused_color || globalConfig.fused_color || '#FFD700';
+        fusedList.forEach(t => {
+            if (t.x === undefined || t.y === undefined) return;
+            const key = `fused_${t.id}`;
+            activeKeys.add(key);
+            const isHold = t.sources && t.sources.includes("hold");
+            const isHibernating = t.sources && t.sources.includes("hibernating");
+            const isUnverified = t.sources && t.sources.includes("unverified");
+            const label = (t.id ? String(t.id).replace('target_', '') : '');
+            this.targetFilter.update(key, parseFloat(t.x), parseFloat(t.y), {
+                id: t.id,
+                sources: t.sources,
+                isHold,
+                isHibernating,
+                isUnverified,
+                color: fusedColor,
+                label: label,
+                type: 'fused'
+            });
+        });
+        this.targetFilter.prune(activeKeys);
+    }
+    updateRawTargets(rName, rawList) {
+        if (!this.targetFilter || !Array.isArray(rawList) || !this.currentState) return;
+        const cfg = this.getRadarConfig(this.currentState, rName, this.currentHass);
+        const defColors = ['#00FF00', '#FF0000', '#00FFFF', '#FF00FF', '#FFFF00', '#FFA500'];
+        const userColors = this.currentConfig?.target_colors || [];
+        const allRadars = this._getAllRadars(this.currentState, this.currentConfig, this.currentHass);
+        const rIndex = allRadars.findIndex(r => r.name === rName);
+        const radarColor = userColors[rIndex] || defColors[rIndex % defColors.length] || '#00FF00';
+        const isSelected = (rName === this.currentState.radar);
+        rawList.forEach(t => {
+            if (t.x === undefined || t.y === undefined) return;
+            const idx = t.i !== undefined ? t.i : (t.id || 1);
+            const key = `raw_${rName}_${idx}`;
+            const ground = this.math.calculate(cfg, { x: t.x, y: t.y, z: t.z || 0 });
+            if (!ground || !ground.active) return;
+            const colorIdx = (typeof idx === 'number') ? ((idx > 9) ? (idx % defColors.length) : (idx - 1)) : 0;
+            const targetCol = userColors[colorIdx] || defColors[colorIdx % defColors.length] || radarColor;
+            this.targetFilter.update(key, ground.left, ground.top, {
+                radarName: rName,
+                index: idx,
+                label: (idx > 9 ? "D" : idx),
+                color: targetCol,
+                type: 'raw',
+                isSelected: isSelected
+            });
+        });
     }
     drawPointCloud() {
         if (!this.activePointCloud || !this.activePointCloud.points || this.activePointCloud.points.length === 0) return;
@@ -551,187 +829,85 @@ export class RadarRenderer {
         }
     }
      drawTargets(state, config, hass, allRadars) {
-        const layer = this.root.getElementById('dots-layer');
-        if (!layer) return;
-        const currentActiveIds = new Set(); 
-        if (state.calibration && state.calibration.active && state.calibration.map) {
-            const tx = state.calibration.map.x; 
-            const ty = state.calibration.map.y;
-            const dotId = 'calibration_dot';
-            currentActiveIds.add(dotId); 
-            let dot = this._domCache[dotId];
-            if (!dot) {
-                dot = document.createElement('div');
-                dot.id = dotId;
-                dot.className = 'dot'; 
-                dot.style.position = 'absolute';
-                dot.style.width = '16px';
-                dot.style.height = '16px';
-                dot.style.background = 'magenta';
-                dot.style.border = '2px solid white';
-                dot.style.borderRadius = '50%';
-                dot.style.boxShadow = '0 0 10px magenta';
-                dot.style.zIndex = '100'; 
-                dot.style.transition = 'left 0.15s linear, top 0.15s linear';
-                this._domCache[dotId] = dot;
-                layer.appendChild(dot);
-            }
-            dot.style.left = `${tx}%`; 
-            dot.style.top = `${ty}%`;
-        } else {
-            const targetRadius = config.target_radius || 8;
+        const dotsLayer = this.root.getElementById('dots-layer');
+        if (dotsLayer && dotsLayer.firstChild) dotsLayer.innerHTML = '';
+        if (!this.targetFilter) return;
+        const currentActiveIds = new Set();
+        if (state.editMode === 'zone' || state.editMode === 'settings' || !state.editing) {
             const mapGroup = state.mapGroup || "default";
             const safeId = mapGroup.toLowerCase().replace(/ /g, "_");
-            const fusionEnt = hass.states[`sensor.rmm_${safeId}_master`];
-            const hasFusionData = fusionEnt && fusionEnt.attributes.targets && fusionEnt.attributes.targets.length > 0;
+            const fusionEnt = hass && hass.states ? hass.states[`sensor.rmm_${safeId}_master`] : null;
+            const sourceFusedList = (state.directFusedTargets && state.directFusedTargets.length > 0)
+                ? state.directFusedTargets
+                : (fusionEnt && fusionEnt.attributes?.targets ? fusionEnt.attributes.targets : []);
             const globalConfig = (state.data && state.data.global_config) || {};
             const fusedColor = config.fused_color || globalConfig.fused_color || '#FFD700';
-            const isTracking = globalConfig.enable_tracking !== false;
-            const showHeading = (globalConfig.show_heading !== undefined ? globalConfig.show_heading : (config.show_heading !== false)) !== false && isTracking;
-            const showLabels = (globalConfig.show_labels !== undefined ? globalConfig.show_labels : config.show_labels) === true && isTracking;
-            const showTrails = (globalConfig.show_trails !== undefined ? globalConfig.show_trails : (config.show_trails !== false)) !== false && isTracking;
-            const transitionStyle = isTracking ? 'left 0.15s linear, top 0.15s linear, opacity 0.3s, border 0.3s' : 'opacity 0.3s, border 0.3s';
-            const globalZones = (state.data && state.data.global_zones) || {};
-            const excludeZones = globalZones.exclude_zones || [];
-            if (state.editMode === 'zone' || state.editMode === 'settings' || !state.editing) {
-                if (hasFusionData) {
-                    fusionEnt.attributes.targets.forEach(t => {
-                        if (excludeZones.some(z => this._isPointInPoly(t.x, t.y, z))) {
-                            return; 
-                        }
-                        const dotId = `fused_${t.id}`;
-                        currentActiveIds.add(dotId); 
-                        let dot = this._domCache[dotId];
-                        if (!dot) { 
-                            dot = document.createElement('div');
-                            dot.id = dotId;
-                            dot.className = 'dot'; 
-                            dot.style.position = 'absolute'; 
-                            dot.style.width = `${targetRadius * 2}px`; 
-                            dot.style.height = `${targetRadius * 2}px`;
-                            dot.style.color = 'white'; 
-                            const strokeW = Math.max(0.5, targetRadius * 0.08); 
-                            dot.style.webkitTextStroke = `${strokeW}px black`;
-                            dot.style.paintOrder = "stroke fill"; 
-                            dot.style.textShadow = 'none'; 
-                            dot.style.fontWeight = '900'; 
-                            const fontSize = Math.max(9, targetRadius * 1.3); 
-                            dot.style.fontSize = `${fontSize}px`;
-                            layer.appendChild(dot);
-                            this._domCache[dotId] = dot; 
-                        }
-                        dot.style.transition = transitionStyle;
-                        const isHold = t.sources && t.sources.includes("hold");
-                        const isHibernating = t.sources && t.sources.includes("hibernating");
-                        const isUnverified = t.sources && t.sources.includes("unverified");
-                        if (isHold) {
-                            dot.style.opacity = '0.6';
-                            dot.style.border = `2px dashed ${fusedColor}`;
-                            dot.style.background = 'transparent';
-                            dot.style.boxShadow = `0 0 5px ${fusedColor}`;
-                        } else if (isHibernating) {
-                            dot.style.opacity = '0.3';
-                            dot.style.border = '1px solid rgba(255,255,255,0.5)';
-                            dot.style.background = '#555'; 
-                            dot.style.boxShadow = 'none';
-                        } else if (isUnverified) {
-                            dot.style.opacity = '0.8';
-                            dot.style.border = '2px solid #FF9800'; 
-                            dot.style.background = 'transparent';
-                            dot.style.boxShadow = 'none';
-                        } else {
-                            dot.style.opacity = '1.0';
-                            dot.style.border = '2px solid white';
-                            dot.style.background = fusedColor;
-                            dot.style.boxShadow = `0 0 8px ${fusedColor}`;
-                        }
-                        if (isTracking && !isHibernating && !isHold) {
-                            const lastTx = parseFloat(dot.dataset.lastTx || '-999');
-                            const lastTy = parseFloat(dot.dataset.lastTy || '-999');
-                            if (lastTx !== -999 && lastTy !== -999) { 
-                                const dist = Math.hypot(t.x - lastTx, t.y - lastTy);
-                                if (dist > 0.2 && showTrails) {
-                                    const trail = document.createElement('div');
-                                    trail.className = 'trail-dot';
-                                    trail.style.width = `${targetRadius * 2}px`; 
-                                    trail.style.height = `${targetRadius * 2}px`;
-                                    trail.style.left = lastTx + '%'; 
-                                    trail.style.top = lastTy + '%';
-                                    trail.style.background = fusedColor;
-                                    layer.insertBefore(trail, dot);
-                                    void trail.offsetWidth;
-                                    trail.style.opacity = '0';
-                                    trail.style.transform = 'translate(-50%, -50%) scale(0.3)'; 
-                                    setTimeout(() => { if (trail.parentNode) trail.parentNode.removeChild(trail); }, 1500);
-                                }
-                            }
-                            if (showHeading) {
-                                const arrowId = `arrow_${t.id}`;
-                                currentActiveIds.add(arrowId);
-                                let arrow = this._domCache[arrowId];
-                                if (!arrow) {
-                                    arrow = document.createElement('div');
-                                    arrow.id = arrowId;
-                                    arrow.style.position = 'absolute';
-                                    arrow.style.width = '0'; arrow.style.height = '0';
-                                    arrow.style.pointerEvents = 'none';
-                                    arrow.style.transition = 'left 0.15s linear, top 0.15s linear, transform 0.2s';
-                                    arrow.style.zIndex = '11';
-                                    arrow.style.transformOrigin = '50% 100%';
-                                    layer.appendChild(arrow);
-                                    this._domCache[arrowId] = arrow;
-                                }
-                                let arrW = Math.max(2, targetRadius * 0.5); 
-                                let arrH = Math.max(4, targetRadius * 0.9); 
-                                arrow.style.borderLeft = `${arrW}px solid transparent`;
-                                arrow.style.borderRight = `${arrW}px solid transparent`;
-                                arrow.style.borderBottom = `${arrH}px solid ${fusedColor}`;
-                                arrow.style.marginLeft = `-${arrW}px`; 
-                                arrow.style.marginTop = `-${arrH}px`;
-                                if (lastTx !== -999 && lastTy !== -999) {
-                                    const dist = Math.hypot(t.x - lastTx, t.y - lastTy);
-                                    if (dist > 0.1) arrow.dataset.lastAngle = (Math.atan2(t.y - lastTy, t.x - lastTx) * 180 / Math.PI) + 90;
-                                }
-                                arrow.style.left = t.x + '%'; arrow.style.top = t.y + '%';
-                                arrow.style.transform = `rotate(${arrow.dataset.lastAngle || 0}deg) translateY(-${targetRadius + arrH * 0.3}px)`;
-                            }
-                            dot.dataset.lastTx = t.x;
-                            dot.dataset.lastTy = t.y;
-                        }
-                        dot.style.left = t.x + '%'; 
-                        dot.style.top = t.y + '%'; 
-                        dot.innerText = showLabels ? (t.id ? t.id.replace('target_', '') : '') : '';
-                        if (showLabels) dot.title = `Fused ID: ${t.id}\nSources: ${t.sources}`;
+            const showLabels = (globalConfig.show_labels !== undefined ? globalConfig.show_labels : config.show_labels) === true;
+            sourceFusedList.forEach(t => {
+                if (t.x === undefined || t.y === undefined) return;
+                const dotId = `fused_${t.id}`;
+                currentActiveIds.add(dotId);
+                const isHold = t.sources && t.sources.includes("hold");
+                const isHibernating = t.sources && t.sources.includes("hibernating");
+                const isUnverified = t.sources && t.sources.includes("unverified");
+                const label = showLabels ? (t.id ? String(t.id).replace('target_', '') : '') : '';
+                this.targetFilter.update(dotId, parseFloat(t.x), parseFloat(t.y), {
+                    id: t.id,
+                    sources: t.sources,
+                    isHold: isHold,
+                    isHibernating: isHibernating,
+                    isUnverified: isUnverified,
+                    color: fusedColor,
+                    label: label,
+                    type: 'fused'
+                });
+            });
+        } else if (state.editing && state.editMode === 'layout') {
+            const defColors = ['#00FF00', '#FF0000', '#00FFFF', '#FF00FF', '#FFFF00', '#FFA500'];
+            const userColors = config.target_colors || [];
+            const targetsToDraw = typeof allRadars !== 'undefined' ? allRadars : this._getAllRadars(state, config, hass);
+            const showLabels = config.show_labels !== false;
+            targetsToDraw.forEach(rObj => {
+                const rName = rObj.name;
+                const rData = (state.data && state.data[rName]) || {};
+                if (rData.paused === true) return;
+                const cfg = this.getRadarConfig(state, rName, hass);
+                const isSelected = (rName === state.radar);
+                if (state.directTargets && state.directTargets[rName] && state.directTargets[rName].length > 0) {
+                    const rawList = state.directTargets[rName];
+                    const allRadarsList = this._getAllRadars(state, config, hass);
+                    const rIndex = allRadarsList.findIndex(r => r.name === rName);
+                    const radarColor = userColors[rIndex] || defColors[rIndex % defColors.length] || '#00FF00';
+                    rawList.forEach(t => {
+                        if (t.x === undefined || t.y === undefined) return;
+                        const idx = t.i !== undefined ? t.i : (t.id || 1);
+                        const ground = this.math.calculate(cfg, { x: t.x, y: t.y, z: t.z || 0 });
+                        if (!ground || !ground.active) return;
+                        const dotId = `raw_${rName}_${idx}`;
+                        currentActiveIds.add(dotId);
+                        const colorIdx = (typeof idx === 'number') ? ((idx > 9) ? (idx % defColors.length) : (idx - 1)) : 0;
+                        const targetCol = userColors[colorIdx] || defColors[colorIdx % defColors.length] || radarColor;
+                        this.targetFilter.update(dotId, ground.left, ground.top, {
+                            radarName: rName,
+                            index: idx,
+                            color: targetCol,
+                            label: (idx > 9 ? "D" : idx),
+                            type: 'raw',
+                            isSelected: isSelected
+                        });
                     });
-                }
-            } else if (state.editing && state.editMode === 'layout') {
-                const defColors = ['#00FF00', '#FF0000', '#00FFFF'];
-                const userColors = config.target_colors || [];
-                const targetsToDraw = typeof radarList !== 'undefined' ? radarList : this._getAllRadars(state, config, hass);
-                targetsToDraw.forEach(rObj => {
-                    const rName = rObj.name;
-                    const rData = state.data[rName] || {};
-                    if (rData.paused === true) return; 
-                    const cfg = this.getRadarConfig(state, rName, hass);
-                    const isSelected = (rName === state.radar); 
+                } else {
                     const maxT = (rData.capabilities && rData.capabilities.max_targets) ? rData.capabilities.max_targets : 5;
                     for (let i = 1; i <= maxT; i++) {
-                        this.processTarget(hass, rName, i, cfg, targetRadius, showLabels, userColors, defColors, null, layer, currentActiveIds, isSelected);
+                        this.processTarget(hass, rName, i, cfg, config.target_radius || 8, showLabels, userColors, defColors, null, dotsLayer, currentActiveIds, isSelected);
                     }
-                });
-            }
-        } 
-        for (let id in this._domCache) {
-            if (!currentActiveIds.has(id)) {
-                let deadDot = this._domCache[id];
-                if (deadDot && deadDot.parentNode) {
-                    deadDot.parentNode.removeChild(deadDot); 
                 }
-                delete this._domCache[id]; 
-            }
+            });
         }
+        this.targetFilter.prune(currentActiveIds);
     }
     processTarget(hass, rName, i, cfg, radius, showLbl, uCols, dCols, unitOverride, layer, currentActiveIds, isSelected) {
+        if (!hass || !hass.states) return false;
         const lowerName = rName.toLowerCase();
         let xs = hass.states[`sensor.${lowerName}_target_${i}_x`];
         let ys = hass.states[`sensor.${lowerName}_target_${i}_y`];
@@ -768,56 +944,40 @@ export class RadarRenderer {
     }
     renderDot(layer, rName, idx, xVal, yVal, zVal, cfg, r, showLbl, uCols, dCols, is1D, currentActiveIds, isSelected) {
         const ground = this.math.calculate(cfg, { x: xVal, y: yVal, z: zVal });
-        const shadowId = `shadow_${rName}_${idx}`;
+        if (!ground || !ground.active) return;
         const dotId = `raw_${rName}_${idx}`;
-        if (currentActiveIds) {
-            currentActiveIds.add(shadowId);
-            currentActiveIds.add(dotId);
+        if (currentActiveIds) currentActiveIds.add(dotId);
+        const colorIdx = (typeof idx === 'number') ? ((idx > 9) ? (idx % dCols.length) : (idx - 1)) : 0;
+        const col = uCols[colorIdx] || dCols[colorIdx % dCols.length] || 'white';
+        if (this.targetFilter) {
+            this.targetFilter.update(dotId, ground.left, ground.top, {
+                radarName: rName,
+                index: idx,
+                color: col,
+                label: showLbl ? (is1D ? "D" : ((idx > 9) ? "D" : idx)) : '',
+                is1D: is1D,
+                type: 'raw',
+                isSelected: isSelected
+            });
         }
-        let shadow = this._domCache[shadowId];
-        if (!shadow) {
-            shadow = document.createElement('div'); 
-            shadow.id = shadowId; 
-            shadow.className = 'base-shadow'; 
-            shadow.style.width = `${r}px`; 
-            shadow.style.height = `${r / 2}px`;
-            shadow.style.transition = 'left 0.15s linear, top 0.15s linear'; 
-            layer.appendChild(shadow);
-            this._domCache[shadowId] = shadow; 
+    }
+    _toRgba(cStr, alpha = 1) {
+        if (!cStr || typeof cStr !== 'string') return `rgba(255, 215, 0, ${alpha})`;
+        if (cStr.startsWith('#')) {
+            let h = cStr.slice(1);
+            if (h.length === 3 || h.length === 4) h = h.split('').slice(0, 3).map(x => x + x).join('');
+            if (h.length >= 6) {
+                const r = parseInt(h.substr(0, 2), 16);
+                const g = parseInt(h.substr(2, 2), 16);
+                const b = parseInt(h.substr(4, 2), 16);
+                return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+            }
+        } else if (cStr.startsWith('rgb')) {
+            const m = cStr.match(/\d+/g);
+            if (m && m.length >= 3) {
+                return `rgba(${m[0]}, ${m[1]}, ${m[2]}, ${alpha})`;
+            }
         }
-        shadow.style.left = ground.left + '%'; 
-        shadow.style.top = ground.top + '%';
-        let dot = this._domCache[dotId];
-        if (!dot) {
-            dot = document.createElement('div'); 
-            dot.id = dotId; 
-            dot.className = 'dot'; 
-            dot.style.width = `${r * 2}px`; 
-            dot.style.height = `${r * 2}px`;
-            const colorIdx = (typeof idx === 'number') ? ((idx > 9) ? (idx % dCols.length) : (idx - 1)) : 0;
-            const col = uCols[colorIdx] || dCols[colorIdx % dCols.length] || 'white';
-            dot.style.background = col; 
-            dot.style.color = 'black'; 
-            dot.style.textShadow = '0 0 1px white';
-            const fontSize = Math.max(8, r * 1.1); 
-            dot.style.fontSize = `${fontSize}px`;
-            dot.style.transition = 'left 0.15s linear, top 0.15s linear, transform 0.2s, box-shadow 0.2s';
-            layer.appendChild(dot);
-            this._domCache[dotId] = dot; 
-        }
-        if (isSelected) {
-            dot.style.border = '2px solid white';
-            dot.style.boxShadow = '0 0 12px white';
-            dot.style.transform = 'translate(-50%, -50%) scale(1.3)';
-            dot.style.zIndex = '100'; 
-        } else {
-            dot.style.border = '1px solid rgba(0,0,0,0.5)';
-            dot.style.boxShadow = 'none';
-            dot.style.transform = 'translate(-50%, -50%) scale(1)';
-            dot.style.zIndex = '10';
-        }
-        dot.innerText = showLbl ? (is1D ? "D" : ((idx > 9) ? "D" : idx)) : '';
-        dot.style.left = ground.left + '%'; 
-        dot.style.top = ground.top + '%';
+        return `rgba(255, 255, 255, ${alpha})`;
     }
 }

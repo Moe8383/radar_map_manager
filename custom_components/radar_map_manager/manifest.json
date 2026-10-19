@@ -6,7 +6,8 @@
   ],
   "config_flow": true,
   "dependencies": [
-    "http"
+    "http",
+    "frontend"
   ],
   "documentation": "https://github.com/Moe8383/radar_map_manager",
   "integration_type": "hub",
