@@ -175,6 +175,14 @@ elements:
       pointer-events: none
 ```
 
+> [!TIP]
+> **常见排查：提示 "Custom element not found: radar-map-card"？**
+> 1. **必须先添加集成**：RMM 是完整集成（不仅是卡片），请务必先完成第一步（在 **配置** -> **设备与服务** -> **添加集成** 中搜索添加 **Radar Map Manager**）。
+> 2. **强制刷新浏览器缓存**：按快捷键 `Ctrl + Shift + R`（Mac 为 `Cmd + Shift + R`）强刷清除缓存。如果是移动端 App，请进入 App 设置 -> 调试 -> 重置前端缓存后重启。
+> 3. **手动添加仪表盘资源（可选备用）**：若前端长时间未能自动加载，可前往 **配置** -> **仪表盘** -> 右上角三点菜单 -> **资源** -> **添加资源**：
+>    - **URL**：`/radar_map_manager/radar-map-card.js`
+>    - **资源类型**：`JavaScript 模块`
+
 ---
 
 ## 🪄 编辑模式使用指南
