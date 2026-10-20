@@ -2,7 +2,12 @@ name: Release
 
 on:
   release:
-    types: [published, created, edited]
+    types: [published] # 只在正式发布时触发，避免与 created / edited 产生并发冲突
+
+# 确保同一个 Release 不会同时跑多个上传任务
+concurrency:
+  group: release-${{ github.event.release.id }}
+  cancel-in-progress: false
 
 jobs:
   release:
