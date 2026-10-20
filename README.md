@@ -163,6 +163,14 @@ elements:
       pointer-events: none
 ```
 
+> [!TIP]
+> **Troubleshooting: "Custom element not found: radar-map-card"**
+> 1. **Add Integration First**: RMM is a full integration. Ensure you have completed Step 1 (**Settings** -> **Devices & Services** -> **Add Integration** -> **Radar Map Manager**).
+> 2. **Hard Refresh**: Force reload your browser cache (`Ctrl + Shift + R` or `Cmd + Shift + R`). On mobile Companion App, reset frontend cache under App Settings and restart.
+> 3. **Manual Resource Registration (Optional)**: If your dashboard does not load it automatically, go to **Settings** -> **Dashboards** -> 3 dots in top right -> **Resources** -> **Add Resource**:
+>    - **URL**: `/radar_map_manager/radar-map-card.js`
+>    - **Resource type**: `JavaScript Module`
+
 ---
 
 ## 🪄 Editor Mode Guide
