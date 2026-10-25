@@ -1,7 +1,7 @@
-import { RadarMath } from './radar-math.js?v=1.3.14';
-import { RadarUI } from './radar-ui.js?v=1.3.14';
-import { RadarRenderer } from './radar-renderer.js?v=1.3.14'; 
-import { RadarEditor } from './radar-editor.js?v=1.3.14';
+import { RadarMath } from './radar-math.js?v=1.3.15';
+import { RadarUI } from './radar-ui.js?v=1.3.15';
+import { RadarRenderer } from './radar-renderer.js?v=1.3.15'; 
+import { RadarEditor } from './radar-editor.js?v=1.3.15';
 const CARD_I18N = {
     "proxy_ok": { "zh": "[RMM VIP] 雷达 {0} 代理认证成功！专属高频点云已通过 HA 隧道激活。", "en": "[RMM VIP] Radar {0} proxy auth successful! Exclusive high-frequency point cloud activated via HA tunnel." },
     "proxy_fail": { "zh": "[RMM VIP] 代理中继连接失败 ({0})，已静默降级为 MQTT 模式。", "en": "[RMM VIP] Proxy relay connection failed ({0}), silently downgraded to MQTT mode." }
@@ -242,7 +242,8 @@ class RadarMapCardNative extends HTMLElement {
             this.state.historyStack = [];
             this.initWebSockets();
             this.state.directFusedTargets = this.state.fused_targets || [];
-            if (this.state.editMode === 'zone' || this.state.editMode === 'settings' || !this.state.editing) {
+            const renderMode = this.state.data?.global_config?.target_render_mode || this.config.target_render_mode || 'css';
+            if (renderMode === 'canvas' && (this.state.editMode === 'zone' || this.state.editMode === 'settings' || !this.state.editing)) {
                 this.renderer.updateFusedTargets(this.state.directFusedTargets);
             }
             this.state.hass = this.getMockHass(this.state.rawHass);
@@ -335,7 +336,12 @@ class RadarMapCardNative extends HTMLElement {
                             if (!this.state.directTargets) this.state.directTargets = {};
                             this.state.directTargets[rName] = parsed;
                             if (this.state.editing && this.state.editMode === 'layout') {
-                                this.renderer.updateRawTargets(rName, parsed);
+                                const renderMode = this.state.data?.global_config?.target_render_mode || this.config.target_render_mode || 'css';
+                                if (renderMode === 'canvas') {
+                                    this.renderer.updateRawTargets(rName, parsed);
+                                } else {
+                                    this.renderer.draw(this.state, this.config, this.state.hass);
+                                }
                             }
                         }
                         else if (parsed.pc !== undefined || parsed.point_cloud !== undefined || parsed.points !== undefined || (parsed.type === 'point_cloud' && parsed.data !== undefined)) {

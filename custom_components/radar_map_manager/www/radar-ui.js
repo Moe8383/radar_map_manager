@@ -110,6 +110,17 @@ const UI_I18N = {
     "title_restore": { zh: "从本地 JSON 文件恢复雷达与防区配置", en: "Import configuration from JSON" },
     "btn_reset": { zh: "重置目标", en: "Clear Tracks" },
     "title_reset": { zh: "清空目标追踪历史并重新编号", en: "Clear Tracking History" },
+    "lbl_fall_alert": { zh: "跌倒预警", en: "Fall Alert" },
+    "title_fall_alert": { zh: "3D雷达跌倒智能检测与预警 (低于高度阈值并持续特定时间触发)", en: "3D Radar Fall Detection & Alert" },
+    "lbl_fall_guard": { zh: "3D空间守护", en: "3D Guard" },
+    "lbl_fall_h": { zh: "高度", en: "H" },
+    "title_fall_h": { zh: "跌倒离地质心高度判断阈值 (米)", en: "Fall Height Threshold (m)" },
+    "lbl_fall_dur": { zh: "延迟", en: "Dly" },
+    "title_fall_dur": { zh: "跌倒持续确认时间 (秒)", en: "Fall Confirmation Delay (seconds)" },
+    "lbl_render_mode": { zh: "引擎", en: "Engine" },
+    "title_render_mode": { zh: "目标平滑与渲染引擎：极速硬件加速 (CSS, 推荐) / 动效预测引擎 (Canvas)", en: "Target Rendering Engine: Native Hardware (CSS, Rec.) / Kinematic Engine (Canvas)" },
+    "opt_render_css": { zh: "极速硬件加速 (CSS, 推荐)", en: "Native Hardware (CSS, Rec.)" },
+    "opt_render_canvas": { zh: "动效预测引擎 (Canvas)", en: "Kinematic Engine (Canvas)" },
     "no_radars": { zh: "暂无雷达", en: "No radars" }
 };
 export class RadarUI {
@@ -341,6 +352,34 @@ export class RadarUI {
                 if (span) span.innerText = t('desc_labels');
             }
         }
+        const rowRenderMode = this.root.getElementById('row-render-mode');
+        if (rowRenderMode) {
+            rowRenderMode.title = t('title_render_mode');
+            const lbl = rowRenderMode.querySelector('label');
+            if (lbl) { lbl.innerText = t('lbl_render_mode'); lbl.title = t('title_render_mode'); }
+            const sel = this.root.getElementById('sel-render-mode');
+            if (sel && sel.options.length >= 2) {
+                sel.options[0].text = t('opt_render_css');
+                sel.options[1].text = t('opt_render_canvas');
+            }
+        }
+        const rowFall = this.root.getElementById('row-fall-alert');
+        if (rowFall) {
+            rowFall.title = t('title_fall_alert');
+            const chkFall = this.root.getElementById('chk-fall-alert');
+            if (chkFall) chkFall.title = t('title_fall_alert');
+            const lblTitle = this.root.getElementById('lbl-fall-alert-title');
+            if (lblTitle) {
+                lblTitle.innerText = `🚨 ${t('lbl_fall_alert')}`;
+                lblTitle.title = t('title_fall_alert');
+            }
+            const lblDesc = this.root.getElementById('lbl-fall-desc');
+            if (lblDesc) lblDesc.innerText = t('lbl_fall_guard');
+            const lblH = this.root.getElementById('lbl-fall-h');
+            if (lblH) { lblH.innerText = t('lbl_fall_h'); lblH.title = t('title_fall_h'); }
+            const lblDur = this.root.getElementById('lbl-fall-dur');
+            if (lblDur) { lblDur.innerText = t('lbl_fall_dur'); lblDur.title = t('title_fall_dur'); }
+        }
         const rowEma = this.root.getElementById('row-ema');
         if (rowEma) {
             rowEma.title = t('title_smooth');
@@ -410,8 +449,12 @@ export class RadarUI {
                 <div id="map-container"></div>
                 <svg id="svg-canvas" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
                 <canvas id="rmm-canvas" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none;"></canvas>
-                <div id="dots-layer" style="display: none;"></div>
+                <div id="dots-layer"></div>
                 <div id="click-layer"></div>
+                <div id="fall-alert-banner" style="display: none; position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 10; background: linear-gradient(135deg, rgba(230, 20, 50, 0.95), rgba(180, 0, 30, 0.95)); color: #fff; padding: 5px 14px; border-radius: 20px; font-size: 11px; font-weight: bold; box-shadow: 0 4px 15px rgba(255, 0, 50, 0.5); border: 1px solid rgba(255, 255, 255, 0.5); pointer-events: none; align-items: center; gap: 6px; animation: rmmFallPulse 1.2s infinite ease-in-out; backdrop-filter: blur(8px);">
+                    <span id="fall-banner-icon">🚨</span>
+                    <span id="fall-banner-text">跌倒警报！</span>
+                </div>
                 <div id="ws-status-dot" title="Connecting..." style="position: absolute; top: 12px; right: 40px; width: 10px; height: 10px; border-radius: 50%; background: #ffc107; box-shadow: 0 0 5px #ffc107; z-index: 5; transition: background 0.3s;"></div>
                 <button id="btn-toggle-mode" title="Toggle Edit Mode">⚙️</button>
             `;
@@ -464,13 +507,18 @@ export class RadarUI {
         style.textContent = `
             :host { display: block; position: relative; overflow: hidden; width: 100%; height: 100%; isolation: isolate; }
             #root { position: relative; width: 100%; height: 100%; user-select: none; overflow: hidden; box-sizing: border-box; }
+            @keyframes rmmFallPulse {
+                0% { transform: translateX(-50%) scale(1); }
+                50% { transform: translateX(-50%) scale(1.04); }
+                100% { transform: translateX(-50%) scale(1); }
+            }
             #svg-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
             .zone-poly { cursor: pointer; transition: fill-opacity 0.2s; }
             .zone-handle { cursor: move; }
             .radar-handle-body { cursor: move; }
             .radar-handle-rot { cursor: alias; }
             #rmm-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; }
-            #dots-layer { display: none !important; }
+            #dots-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; }
             #click-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 3; touch-action: none; }
             #edit-ui { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 4; pointer-events: none; }
             #edit-ui.show { display: block; }
@@ -747,6 +795,14 @@ export class RadarUI {
                             </div>
                             <span id="val-merge" style="width:30px; text-align:right">0.8m</span>
                         </div>
+                        <!-- ✨ [新增]: 目标渲染引擎模式选择 -->
+                        <div class="row" id="row-render-mode" style="padding-bottom: 3px;">
+                            <label style="width:40px; text-align:right; color:#1976D2; font-weight:bold; margin-right:1px;" title="Target Rendering Engine">Engine</label>
+                            <select id="sel-render-mode" style="flex:1; height:18px; font-size:9px; background:#111; color:#fff; border:1px solid #444; border-radius:3px; padding:0 2px; cursor:pointer;" title="Target Rendering Mode">
+                                <option value="css">极速硬件加速 (CSS, 推荐)</option>
+                                <option value="canvas">动效预测引擎 (Canvas)</option>
+                            </select>
+                        </div>
                         <!-- ✨ [新增]: 航向箭头复选框 -->
                         <div class="row" id="row-heading" style="padding-bottom: 4px; margin-bottom: 4px;">
                             <label style="width:40px; text-align:right; color:#1976D2; font-weight:bold; margin-right:1px;">Arrow</label>
@@ -782,6 +838,34 @@ export class RadarUI {
                             <label style="width:40px; text-align:right; color:#1976D2; font-weight:bold; margin-right:1px;">Labels</label>
                             <input type="checkbox" id="chk-show-labels" style="margin:0 2px 0 0; width:13px; height:13px; cursor:pointer;" title="Show Target IDs">
                             <span style="font-size:9px; color:#888; flex:1; margin-left:2px;">Show Target IDs</span>
+                        </div>
+                        <!-- ✨ [3D专属]: 跌倒智能预警配置 (两行式紧凑布局，彻底解决230px截断溢出) -->
+                        <div id="row-fall-alert" style="display:none; flex-direction:column; border-bottom: 1px solid #333; padding-bottom: 4px; margin-bottom: 4px;">
+                            <div class="row" style="margin-bottom: 3px; align-items:center;">
+                                <label id="lbl-fall-alert-title" style="width:auto; text-align:left; color:#FF5252; font-weight:bold; margin-right:4px;" title="Fall Alert">🚨 Fall Alert</label>
+                                <input type="checkbox" id="chk-fall-alert" style="margin:0 4px 0 0; width:13px; height:13px; cursor:pointer;" title="Enable Fall Alert">
+                                <span id="lbl-fall-desc" style="font-size:9px; color:#888; flex:1; text-align:right;">3D Guard</span>
+                            </div>
+                            <div class="row" id="row-fall-params" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0;">
+                                <div style="display:flex; align-items:center; gap:2px;">
+                                    <label id="lbl-fall-h" style="width:auto; font-size:9px;" title="Fall Height Threshold">H</label>
+                                    <div class="slider-row" style="flex:none; width:auto;">
+                                        <button class="stepper" id="btn-fall-h-minus">-</button>
+                                        <input type="number" id="set-fall-h-input" min="0.2" max="0.8" step="0.05" style="width:30px; text-align:center; padding:0;">
+                                        <button class="stepper" id="btn-fall-h-plus">+</button>
+                                    </div>
+                                    <span style="font-size:9px; color:#aaa; width:8px;">m</span>
+                                </div>
+                                <div style="display:flex; align-items:center; gap:2px;">
+                                    <label id="lbl-fall-dur" style="width:auto; font-size:9px;" title="Fall Confirmation Duration">Dly</label>
+                                    <div class="slider-row" style="flex:none; width:auto;">
+                                        <button class="stepper" id="btn-fall-dur-minus">-</button>
+                                        <input type="number" id="set-fall-dur-input" min="1" max="30" step="1" style="width:26px; text-align:center; padding:0;">
+                                        <button class="stepper" id="btn-fall-dur-plus">+</button>
+                                    </div>
+                                    <span style="font-size:9px; color:#aaa; width:8px;">s</span>
+                                </div>
+                            </div>
                         </div>
                         <div class="row" id="row-ema">
                             <label style="width:40px">Smooth</label>
@@ -917,6 +1001,54 @@ export class RadarUI {
         if (btnCalibY) {
             btnCalibY.innerText = state.isCalibratingMap === 'Y' ? `❌ ${this.t('btn_cancel_y', state)}` : `📏 ${this.t('btn_calib_y', state)}`;
             btnCalibY.className = state.isCalibratingMap === 'Y' ? "danger" : "";
+        }
+        const rowFallEl = this.root.getElementById('row-fall-alert');
+        if (rowFallEl) {
+            let has3D = false;
+            if (state && state.data) {
+                for (const [rName, rConf] of Object.entries(state.data)) {
+                    if (['global_zones', 'global_config', 'fused_targets'].includes(rName)) continue;
+                    const caps = rConf.capabilities || {};
+                    const layout = rConf.layout || {};
+                    const rType = parseInt(layout.radar_type || caps.radar_type || 1);
+                    if (rType === 3 || caps.z) {
+                        has3D = true;
+                        break;
+                    }
+                }
+            }
+            rowFallEl.style.display = has3D ? 'flex' : 'none';
+        }
+        const fallBanner = this.root.getElementById('fall-alert-banner');
+        if (fallBanner) {
+            const fusedList = state.directFusedTargets || state.fused_targets || [];
+            const fallenTarget = fusedList.find(t => t.posture === 'fallen');
+            const suspectedTarget = fusedList.find(t => t.posture === 'suspected_fall');
+            if (fallenTarget) {
+                fallBanner.style.display = 'flex';
+                fallBanner.style.background = 'linear-gradient(135deg, rgba(230, 20, 50, 0.95), rgba(180, 0, 30, 0.95))';
+                fallBanner.style.boxShadow = '0 4px 15px rgba(255, 0, 50, 0.5)';
+                const h = (fallenTarget.abs_height !== undefined && fallenTarget.abs_height !== null) ? `${Number(fallenTarget.abs_height).toFixed(2)}m` : '';
+                const tid = fallenTarget.id ? String(fallenTarget.id).replace('target_', '') : '1';
+                const bannerText = this.isZh(state)
+                    ? `🚨 跌倒警报！目标 (${tid}) 离地高度 ${h}`
+                    : `🚨 Fall Alert! Target (${tid}) Height ${h}`;
+                const textEl = this.root.getElementById('fall-banner-text');
+                if (textEl) textEl.innerText = bannerText;
+            } else if (suspectedTarget) {
+                fallBanner.style.display = 'flex';
+                fallBanner.style.background = 'linear-gradient(135deg, rgba(245, 124, 0, 0.95), rgba(200, 90, 0, 0.95))';
+                fallBanner.style.boxShadow = '0 4px 15px rgba(255, 150, 0, 0.5)';
+                const h = (suspectedTarget.abs_height !== undefined && suspectedTarget.abs_height !== null) ? `${Number(suspectedTarget.abs_height).toFixed(2)}m` : '';
+                const tid = suspectedTarget.id ? String(suspectedTarget.id).replace('target_', '') : '1';
+                const bannerText = this.isZh(state)
+                    ? `⚠️ 疑似跌倒确认中... 目标 (${tid}) 离地高度 ${h}`
+                    : `⚠️ Suspected Fall Confirming... Target (${tid}) Height ${h}`;
+                const textEl = this.root.getElementById('fall-banner-text');
+                if (textEl) textEl.innerText = bannerText;
+            } else {
+                fallBanner.style.display = 'none';
+            }
         }
         const wsDot = this.root.getElementById('ws-status-dot');
         if (wsDot) {
@@ -1253,6 +1385,26 @@ export class RadarUI {
                 payload[key] = val;
                 state.hass.callService('radar_map_manager', 'update_map_config', payload);
             }
+            if (key === 'fall_threshold_h' || key === 'fall_duration') {
+                if (state && state.data && state.hass) {
+                    for (const [rName, rConf] of Object.entries(state.data)) {
+                        if (['global_zones', 'global_config', 'fused_targets'].includes(rName)) continue;
+                        const caps = rConf.capabilities || {};
+                        const layout = rConf.layout || {};
+                        const rType = parseInt(layout.radar_type || caps.radar_type || 1);
+                        if (rType === 3 || caps.z) {
+                            const safe_r = rName.toLowerCase().replace(/[\s-]/g, '_');
+                            const targetEntity = (key === 'fall_threshold_h') ? `number.${safe_r}_fall_height` : `number.${safe_r}_fall_duration`;
+                            if (state.hass.states[targetEntity]) {
+                                state.hass.callService('number', 'set_value', {
+                                    entity_id: targetEntity,
+                                    value: val
+                                });
+                            }
+                        }
+                    }
+                }
+            }
         };
         const bindControl = (sliderId, labelId, btnMinusId, btnPlusId, configKey, defVal, unit) => {
             const slider = this.root.getElementById(sliderId);
@@ -1260,16 +1412,17 @@ export class RadarUI {
             const btnMinus = this.root.getElementById(btnMinusId);
             const btnPlus = this.root.getElementById(btnPlusId);
             if (!slider) return;
+            const step = parseFloat(slider.step) || 0.1;
+            const decimals = (step < 0.1) ? 2 : ((step < 1) ? 1 : 0);
             let val = (conf[configKey] !== undefined) ? parseFloat(conf[configKey]) : defVal;
             if (this.root.activeElement !== slider) {
                 slider.value = val;
-                if (lbl) lbl.innerText = val.toFixed(1) + unit;
+                if (lbl) lbl.innerText = val.toFixed(decimals) + unit;
             }
-            const step = parseFloat(slider.step) || 0.1;
             const updateAndSave = (newValue) => {
-                newValue = parseFloat(newValue.toFixed(1));
+                newValue = parseFloat(newValue.toFixed(decimals));
                 slider.value = newValue;
-                if (lbl) lbl.innerText = newValue.toFixed(1) + unit;
+                if (lbl) lbl.innerText = newValue.toFixed(decimals) + unit;
                 saveConfigBypass(configKey, newValue);
             };
             if (btnMinus) btnMinus.onclick = () => updateAndSave(parseFloat(slider.value) - step);
@@ -1324,6 +1477,18 @@ export class RadarUI {
         bindControl('set-interval-range', 'val-interval', 'btn-int-minus', 'btn-int-plus', 'update_interval', 0.1, 's');
         bindControl('set-ema-range', 'val-ema', 'btn-ema-minus', 'btn-ema-plus', 'ema_smoothing_level', 7, ' Lvl');
         bindControl('set-merge-range', 'val-merge', 'btn-mrg-minus', 'btn-mrg-plus', 'merge_distance', 0.8, 'm');
+        const selRenderMode = this.root.getElementById('sel-render-mode');
+        if (selRenderMode) {
+            let curMode = conf.target_render_mode || 'css';
+            if (this.root.activeElement !== selRenderMode) selRenderMode.value = curMode;
+            selRenderMode.onchange = (e) => {
+                const newMode = e.target.value;
+                saveConfigBypass('target_render_mode', newMode);
+                if (this.root.host && this.root.host.renderer) {
+                    this.root.host.renderer.draw(state, this.root.host.config, this.root.host.state.hass);
+                }
+            };
+        }
         const chkHeading = this.root.getElementById('chk-show-heading');
         if (chkHeading) {
             let isShowHeading = (conf.show_heading !== undefined) ? conf.show_heading : true;
@@ -1337,6 +1502,20 @@ export class RadarUI {
         bindControl('set-mjs-range', 'val-mjs', 'btn-mjs-minus', 'btn-mjs-plus', 'max_jump_speed', 2.5, 'm/s');
         bindControl('set-sh-range', 'val-sh', 'btn-sh-minus', 'btn-sh-plus', 'stationary_max_hold', 300, 's');
         bindControl('set-ab-range', 'val-ab', 'btn-ab-minus', 'btn-ab-plus', 'auto_block_duration', 15, 's');
+        bindControl('set-fall-h-input', null, 'btn-fall-h-minus', 'btn-fall-h-plus', 'fall_threshold_h', 0.40, '');
+        bindControl('set-fall-dur-input', null, 'btn-fall-dur-minus', 'btn-fall-dur-plus', 'fall_duration', 5.0, '');
+        const chkFallAlert = this.root.getElementById('chk-fall-alert');
+        const rowFallParams = this.root.getElementById('row-fall-params');
+        if (chkFallAlert) {
+            let isFallEn = (conf.fall_alert_enabled !== undefined) ? conf.fall_alert_enabled : true;
+            if (this.root.activeElement !== chkFallAlert) chkFallAlert.checked = isFallEn;
+            if (rowFallParams) rowFallParams.style.display = isFallEn ? 'flex' : 'none';
+            chkFallAlert.onchange = (e) => {
+                const checked = e.target.checked;
+                if (rowFallParams) rowFallParams.style.display = checked ? 'flex' : 'none';
+                saveConfigBypass('fall_alert_enabled', checked);
+            };
+        }
         const chkTrack = this.root.getElementById('chk-enable-tracking');
         if (chkTrack) {
             let isTrackEn = (conf.enable_tracking !== undefined) ? conf.enable_tracking : true;

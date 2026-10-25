@@ -18,6 +18,8 @@ class FusionEngine:
             radars = data.get("radars", {})
             map_targets = {}
             map_scales = {}
+            map_has_3d = {}
+            map_radar_fall_cfg = {}
             for r_name, r_conf in radars.items():
                 map_group = r_conf.get("map_group", "default")
                 map_config = maps.get(map_group, {}).get("config", {})
@@ -33,9 +35,29 @@ class FusionEngine:
                 origin_y = float(layout.get('origin_y', 50))
                 caps = r_conf.get("capabilities", {})
                 radar_type = int(layout.get("radar_type", caps.get("radar_type", 1)))
+                is_3d = (radar_type == 3 or caps.get("z", False))
                 safe_r = r_name.lower().replace(" ", "_").replace("-", "_")
-                radar_h_entity = self.hass.states.get(f"number.{safe_r}_radar_height")
-                if not radar_h_entity:
+                if not is_3d and self.hass:
+                    z_ent = self.hass.states.get(f"sensor.{safe_r}_target_1_z")
+                    if z_ent and z_ent.state not in ['unavailable', 'unknown']:
+                        is_3d = True
+                if is_3d:
+                    map_has_3d[map_group] = True
+                if self.hass and is_3d:
+                    sw = self.hass.states.get(f"switch.{safe_r}_fall_alert")
+                    num_h = self.hass.states.get(f"number.{safe_r}_fall_height")
+                    num_t = self.hass.states.get(f"number.{safe_r}_fall_duration")
+                    cfg = map_radar_fall_cfg.setdefault(map_group, {})
+                    if sw and sw.state in ['on', 'off']:
+                        cfg['sw_enabled'] = (sw.state == 'on')
+                    if num_h and num_h.state not in ['unavailable', 'unknown']:
+                        try: cfg['threshold_h'] = float(num_h.state)
+                        except ValueError: pass
+                    if num_t and num_t.state not in ['unavailable', 'unknown']:
+                        try: cfg['duration'] = float(num_t.state)
+                        except ValueError: pass
+                radar_h_entity = self.hass.states.get(f"number.{safe_r}_radar_height") if self.hass else None
+                if not radar_h_entity and self.hass:
                     radar_h_entity = self.hass.states.get(f"number.{safe_r}_install_height")
                 if radar_h_entity and radar_h_entity.state not in ['unavailable', 'unknown']:
                     try: radar_h = float(radar_h_entity.state)
@@ -116,10 +138,16 @@ class FusionEngine:
                     map_scale_y = avg_map_scale
                 if map_scale_x <= 0: map_scale_x = avg_map_scale
                 if map_scale_y <= 0: map_scale_y = avg_map_scale
+                radar_f_cfg = map_radar_fall_cfg.get(map_id, {})
+                has_3d = map_has_3d.get(map_id, False)
+                fall_enabled = has_3d and bool(map_config.get("fall_alert_enabled", True))
+                fall_threshold_h = float(map_config.get("fall_threshold_h", radar_f_cfg.get('threshold_h', 0.40)))
+                fall_duration = float(map_config.get("fall_duration", radar_f_cfg.get('duration', 5.0)))
                 fused_results = self._cluster_targets(
                     map_id, points, merge_dist, ema_level, update_interval,
                     map_entrance, map_exclude, map_stationary, verify_delay, hibernation_ttl_sec, map_scale_x, map_scale_y, enable_verify_rule,
-                    max_jump_base, max_jump_speed, stationary_max_hold_sec, enable_tracking
+                    max_jump_base, max_jump_speed, stationary_max_hold_sec, enable_tracking,
+                    fall_enabled, fall_threshold_h, fall_duration
                 )
                 if map_id in maps:
                     maps[map_id]['targets'] = fused_results
@@ -207,7 +235,7 @@ class FusionEngine:
             return {'left': final_x, 'top': final_y, 'active': True, 'abs_height': abs_height}
         except Exception as e:
             return None
-    def _cluster_targets(self, map_id, points, merge_dist_m=0.8, ema_level=7, update_interval=0.1, entrance_zones=None, exclude_zones=None, stationary_zones=None, verify_delay=2.5, hibernation_ttl_sec=43200, map_scale_x=5.0, map_scale_y=5.0, enable_verify_rule=True, max_jump_base=1.0, max_jump_speed=2.5, stationary_max_hold_sec=300.0, enable_tracking=True):
+    def _cluster_targets(self, map_id, points, merge_dist_m=0.8, ema_level=7, update_interval=0.1, entrance_zones=None, exclude_zones=None, stationary_zones=None, verify_delay=2.5, hibernation_ttl_sec=43200, map_scale_x=5.0, map_scale_y=5.0, enable_verify_rule=True, max_jump_base=1.0, max_jump_speed=2.5, stationary_max_hold_sec=300.0, enable_tracking=True, fall_enabled=True, fall_threshold_h=0.40, fall_duration=5.0):
         import time
         current_time = time.time()
         old_targets = self._history.get(map_id, {})
@@ -266,7 +294,7 @@ class FusionEngine:
             avg_h = sum(heights) / len(heights) if heights else None
             posture = 'unknown'
             if avg_h is not None:
-                if avg_h < 0.4: posture = 'fallen'
+                if avg_h < fall_threshold_h: posture = 'low'
                 elif avg_h < 1.2: posture = 'sitting'
                 else: posture = 'standing'
             sources = [f"{p['radar']}:{p['raw_id']}" for p in cl]
@@ -283,13 +311,25 @@ class FusionEngine:
                             in_exclude = True
                             break
                 if in_exclude: continue
+                in_stationary = False
+                if stationary_zones:
+                    for zone in stationary_zones:
+                        poly = zone.get("points", [])
+                        if poly and len(poly) >= 3 and self._point_in_polygon(x, y, poly):
+                            in_stationary = True
+                            break
+                final_posture = new_c['posture']
+                if final_posture == 'low':
+                    if in_stationary: final_posture = 'resting'
+                    elif fall_enabled: final_posture = 'fallen'
+                    else: final_posture = 'sitting'
                 res = {
                     "id": f"target_{idx+1}",
                     "x": round(x, 2), 
                     "y": round(y, 2),
                     "count": new_c['count'],
                     "sources": new_c['sources'],
-                    "posture": new_c['posture']
+                    "posture": final_posture
                 }
                 if new_c.get('abs_height') is not None: res['abs_height'] = round(new_c['abs_height'], 2)
                 results.append(res)
@@ -339,6 +379,7 @@ class FusionEngine:
                         if dist_m < best_dist and dist_m < max_jump_m:
                             best_dist = dist_m
                             best_id = old_id
+            fall_start_time = None
             if best_id is not None:
                 available_old.remove(best_id)
                 old_x = old_targets[best_id]['x']
@@ -347,6 +388,7 @@ class FusionEngine:
                 spawn_time = old_targets[best_id].get('spawn_time', current_time)
                 is_verified = old_targets[best_id].get('is_verified', False)
                 is_valid_birth = old_targets[best_id].get('is_valid_birth', True)
+                fall_start_time = old_targets[best_id].get('fall_start_time')
                 if not is_verified:
                     current_alpha = 1.0
                 else:
@@ -410,6 +452,47 @@ class FusionEngine:
                                 break
                 if is_valid_birth and verify_delay <= 0.001:
                     is_verified = True
+            avg_h = new_c.get('abs_height')
+            in_furniture_zone = False
+            if stationary_zones:
+                for zone in stationary_zones:
+                    poly = zone.get("points", [])
+                    if poly and len(poly) >= 3 and self._point_in_polygon(smoothed_x, smoothed_y, poly):
+                        in_furniture_zone = True
+                        break
+            final_posture = 'unknown'
+            if avg_h is not None:
+                if in_furniture_zone:
+                    fall_start_time = None
+                    if avg_h < 0.6: final_posture = 'resting'
+                    elif avg_h < 1.2: final_posture = 'sitting'
+                    else: final_posture = 'standing'
+                elif not fall_enabled:
+                    fall_start_time = None
+                    if avg_h < 1.2: final_posture = 'sitting'
+                    else: final_posture = 'standing'
+                else:
+                    if avg_h <= fall_threshold_h:
+                        if fall_start_time is None:
+                            fall_start_time = current_time
+                        elapsed = current_time - fall_start_time
+                        if elapsed >= fall_duration:
+                            final_posture = 'fallen'
+                        else:
+                            final_posture = 'suspected_fall'
+                    elif avg_h >= (fall_threshold_h + 0.10):
+                        fall_start_time = None
+                        if avg_h < 1.2: final_posture = 'sitting'
+                        else: final_posture = 'standing'
+                    else:
+                        if fall_start_time is not None:
+                            elapsed = current_time - fall_start_time
+                            if elapsed >= fall_duration:
+                                final_posture = 'fallen'
+                            else:
+                                final_posture = 'suspected_fall'
+                        else:
+                            final_posture = 'sitting'
             if is_verified:
                 currently_excluded = False
                 if exclude_zones:
@@ -426,9 +509,10 @@ class FusionEngine:
                         "y": round(smoothed_y, 2),
                         "count": new_c['count'],
                         "sources": new_c['sources'],
-                        "posture": new_c['posture']
+                        "posture": final_posture
                     }
                     if new_c.get('abs_height') is not None: res['abs_height'] = round(new_c['abs_height'], 2)
+                    if fall_start_time is not None: res['fall_duration'] = round(current_time - fall_start_time, 1)
                     results.append(res)
             else:
                 res = {
@@ -437,9 +521,10 @@ class FusionEngine:
                     "y": round(smoothed_y, 2),
                     "count": new_c['count'],
                     "sources": ["unverified"],
-                    "posture": new_c['posture']
+                    "posture": final_posture
                 }
                 if new_c.get('abs_height') is not None: res['abs_height'] = round(new_c['abs_height'], 2)
+                if fall_start_time is not None: res['fall_duration'] = round(current_time - fall_start_time, 1)
                 results.append(res)
             new_history[target_id] = {
                 'x': smoothed_x, 'y': smoothed_y,
@@ -447,7 +532,9 @@ class FusionEngine:
                 'is_valid_birth': is_valid_birth,
                 'spawn_time': spawn_time,
                 'last_seen': current_time,
-                'hibernating': False
+                'hibernating': False,
+                'fall_start_time': fall_start_time,
+                'posture': final_posture
             }
         active_verified_points = [
             (t['x'], t['y']) for t in new_history.values() 
@@ -483,7 +570,7 @@ class FusionEngine:
                 if in_stationary and not in_exclude and time_since_last_seen < specific_hold_sec and not is_redundant:
                     old_t['hibernating'] = False
                     new_history[old_id] = old_t
-                    results.append({"id": old_id, "x": round(old_t['x'], 2), "y": round(old_t['y'], 2), "count": 1, "sources": ["hold"]})
+                    results.append({"id": old_id, "x": round(old_t['x'], 2), "y": round(old_t['y'], 2), "count": 1, "sources": ["hold"], "posture": old_t.get('posture', 'resting')})
                 elif time_since_last_seen < hibernation_ttl_sec and not is_redundant:
                     old_t['hibernating'] = True
                     new_history[old_id] = old_t
@@ -500,7 +587,8 @@ class FusionEngine:
         active_count = sum(1 for t in targets if not (t.get("sources", []) and ("hibernating" in t["sources"] or "unverified" in t["sources"])))
         attrs = {
             "map_group": map_id, "count": active_count,
-            "friendly_name": f"RMM {map_id} Master", "icon": "mdi:radar"
+            "friendly_name": f"RMM {map_id} Master", "icon": "mdi:radar",
+            "targets": targets
         }
         self.hass.states.async_set(entity_id, str(active_count), attrs)
     def _point_in_polygon(self, x, y, poly):

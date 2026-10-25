@@ -76,6 +76,7 @@ export class TargetFilter {
                 targetX: measX,
                 targetY: measY,
                 lastUpdate: now,
+                avgInterval: 0.1,
                 alive: true,
                 alpha: 1.0,
                 metadata: metadata,
@@ -84,7 +85,15 @@ export class TargetFilter {
             this.tracks.set(key, track);
             return track;
         }
-        const dt = Math.max(0.01, Math.min(1.0, (now - track.lastUpdate) / 1000));
+        const dt = (now - track.lastUpdate) / 1000;
+        if (dt < 0.025) {
+            track.targetX = measX;
+            track.targetY = measY;
+            track.metadata = metadata;
+            return track;
+        }
+        const safeDt = Math.max(0.01, Math.min(2.0, dt));
+        track.avgInterval = track.avgInterval ? (track.avgInterval * 0.7 + safeDt * 0.3) : safeDt;
         track.lastUpdate = now;
         track.alive = true;
         track.metadata = metadata;
@@ -99,9 +108,9 @@ export class TargetFilter {
             track.history = [{ x: measX, y: measY, time: now }];
             return track;
         }
-        const measVx = (measX - track.x) / dt;
-        const measVy = (measY - track.y) / dt;
-        const Kp = 0.55;
+        const measVx = (measX - track.targetX) / safeDt;
+        const measVy = (measY - track.targetY) / safeDt;
+        const Kp = 0.85;
         const Kv = 0.40;
         track.targetX = measX;
         track.targetY = measY;
@@ -117,13 +126,15 @@ export class TargetFilter {
         const activeTracks = [];
         for (const [key, track] of this.tracks.entries()) {
             const timeSinceUpdate = (now - track.lastUpdate) / 1000;
-            if (timeSinceUpdate > 1.8) {
+            const timeoutThreshold = Math.max(0.25, (track.avgInterval || 0.1) * 1.6);
+            const maxTtl = Math.max(1.8, (track.avgInterval || 0.1) * 3.5);
+            if (timeSinceUpdate > maxTtl) {
                 track.alpha -= dt * 2.5;
                 if (track.alpha <= 0) {
                     this.tracks.delete(key);
                     continue;
                 }
-            } else if (timeSinceUpdate > 0.15) {
+            } else if (timeSinceUpdate > timeoutThreshold) {
                 const toX = track.targetX - track.x;
                 const toY = track.targetY - track.y;
                 track.x += toX * Math.min(1.0, dt * 10);
@@ -134,8 +145,10 @@ export class TargetFilter {
             } else {
                 track.x += track.vx * dt * 0.25;
                 track.y += track.vy * dt * 0.25;
-                track.x += (track.targetX - track.x) * dt * 8;
-                track.y += (track.targetY - track.y) * dt * 8;
+                const toX = track.targetX - track.x;
+                const toY = track.targetY - track.y;
+                track.x += toX * Math.min(1.0, dt * 12);
+                track.y += toY * Math.min(1.0, dt * 12);
                 track.alpha = 1.0;
             }
             if (!track.history) track.history = [];

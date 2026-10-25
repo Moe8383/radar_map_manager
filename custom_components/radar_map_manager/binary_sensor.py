@@ -228,6 +228,8 @@ class RadarFallSensor(CoordinatorEntity, BinarySensorEntity):
         self._attr_icon = "mdi:human-fall"
         self._map_group = config['map_group']
         self._fallen_targets = []
+        self._fall_status = "normal"
+        self._last_detected = None
     @property
     def unique_id(self):
         return self._unique_id
@@ -235,29 +237,62 @@ class RadarFallSensor(CoordinatorEntity, BinarySensorEntity):
     def is_on(self):
         return self._is_on
     @property
+    def icon(self):
+        if self._is_on:
+            return "mdi:human-fall"
+        if self._fall_status == "suspected":
+            return "mdi:account-alert"
+        return "mdi:account-check"
+    @property
     def extra_state_attributes(self):
         return {
             "map_group": self._map_group,
+            "status": self._fall_status,
             "fallen_targets": self._fallen_targets,
-            "last_detected": time.time() if self._is_on else None
+            "last_detected": self._last_detected
         }
     @callback
     def _handle_coordinator_update(self) -> None:
         data = self.coordinator.data or {}
         maps_data = data.get('maps', {})
         target_map_data = maps_data.get(self._map_group)
+        if not target_map_data:
+            for k, v in maps_data.items():
+                if k.lower() == self._map_group.lower():
+                    target_map_data = v
+                    break
         fused_targets = target_map_data.get('targets', []) if target_map_data else []
         fallen_targets_info = []
         is_fall_detected = False
+        is_suspected = False
         for t in fused_targets:
-            if t.get("posture") == 'fallen':
+            posture = t.get("posture")
+            if posture == 'fallen':
                 is_fall_detected = True
                 fallen_targets_info.append({
                     "id": t.get("id"),
+                    "status": "confirmed",
                     "height": t.get("abs_height"),
+                    "duration": t.get("fall_duration", 0),
                     "sources": t.get("sources")
                 })
+            elif posture == 'suspected_fall':
+                is_suspected = True
+                fallen_targets_info.append({
+                    "id": t.get("id"),
+                    "status": "suspected",
+                    "height": t.get("abs_height"),
+                    "duration": t.get("fall_duration", 0),
+                    "sources": t.get("sources")
+                })
+        if is_fall_detected:
+            self._fall_status = "confirmed"
+            self._last_detected = time.time()
+        elif is_suspected:
+            self._fall_status = "suspected"
+        else:
+            self._fall_status = "normal"
         self._fallen_targets = fallen_targets_info
         if self._is_on != is_fall_detected:
             self._is_on = is_fall_detected
-            self.async_write_ha_state()
+        self.async_write_ha_state()
