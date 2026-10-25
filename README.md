@@ -59,6 +59,11 @@ Supports arbitrary polygons with flexible editing, making zone management easy:
 ### 4. 📐 3D Spatial Correction
 For side-mounted radars, RMM features a built-in 3D geometric correction algorithm. It automatically converts Slant Range to Ground Distance based on installation height and target height, significantly improving positioning accuracy.
 
+### 5. 🚨 3D Radar Fall Alert & Bed/Sofa False-Alarm Protection
+For 3D radars capable of height sensing (such as LD6002B, LD6004, etc.), RMM provides room-level fall protection with smart false-alarm filtering:
+* **Spatial Fall Guardian**: Continuously tracks target height above ground. When a person stays below the fall height threshold for longer than the set delay, a room-level alarm entity (`binary_sensor.rmm_<room>_fall_alert`) triggers automatically with visual shockwaves and alert banners on the map card.
+* **Bed/Sofa False-Alarm Immunity**: Smart zone exemption! When someone lies down on a bed or sofa inside a "Stationary Hold" zone, RMM recognizes it as normal resting.
+
 ---
 
 ## 🛠️ Supported Hardware
@@ -300,6 +305,7 @@ Click `Set` in the panel for global parameters.
 * `Interval`: Backend polling and calculation refresh interval (in seconds).
 * `Merge`: Radar target fusion distance (in meters). Targets from different radars within this distance will be merged into one.
 
+* `Engine`: Target rendering engine. Switch between "Native Hardware (CSS, Recommended)" and "Kinematic Engine (Canvas)".
 * `Arrow`: Display target movement direction.
 * `Trails`: Display target movement trails.
 
@@ -308,6 +314,12 @@ Click `Set` in the panel for global parameters.
 
 * `Track`: When enabled, activates the advanced anti-ghosting and kinematic tracking engine; when disabled, it falls back to a simple stateless passthrough mode.
 * `Labels`: When enabled, displays tracking IDs (1, 2, 3...) directly on the solid target dots on the map.
+
+* `🚨 Fall Alert` (Visible only when 3D radars are present):
+  * **Master Switch**: Enable or disable spatial fall detection for this map.
+  * **H (Height Threshold)**: Centroid height above ground below which a suspected fall is flagged (unit: meters, default: 0.40m).
+  * **Dly (Confirmation Delay)**: Dwell duration required before triggering a confirmed fall alarm (unit: seconds, default: 5s). Automatically synchronized to hardware radar entities.
+
 * `Smooth`: Smoothness level of the target movement trajectory (Levels 1-10).
 * `Verify` (Verification Delay & Rules): Dual-track verification engine.
   * **Checked (Standard Mode)**: Allows targets to spawn anywhere in the room, but they must pass the set observation period (seconds) to become verified, effectively filtering out random noise.
