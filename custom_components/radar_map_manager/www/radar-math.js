@@ -40,6 +40,45 @@ export class RadarMath {
         const finalY = oy + (xm * sx * xVecY) + (ym * sy * yVecY);
         return { left: finalX, top: finalY, active: true };
     }
+    canvasToRadarLocal(cfg, px, py) {
+        const ox = parseFloat(cfg.origin_x) || 50;
+        const oy = parseFloat(cfg.origin_y) || 50;
+        const sx = parseFloat(cfg.scale_x) || 5;
+        const sy = parseFloat(cfg.scale_y) || 5;
+        const rot = parseFloat(cfg.rotation) || 0;
+        const baseRad = (rot - 90) * Math.PI / 180.0;
+        const yVecX = Math.cos(baseRad);
+        const yVecY = Math.sin(baseRad);
+        const xVecX = Math.cos(baseRad + (Math.PI / 2));
+        const xVecY = Math.sin(baseRad + (Math.PI / 2));
+        const dx = px - ox;
+        const dy = py - oy;
+        let xm = (dx * xVecX + dy * xVecY) / (sx || 1);
+        let ym = (dx * yVecX + dy * yVecY) / (sy || 1);
+        if (cfg.mirror_x) {
+            xm = -xm;
+        }
+        return { xm, ym };
+    }
+    radarLocalToCanvas(cfg, xm, ym) {
+        let curXm = xm;
+        if (cfg.mirror_x) {
+            curXm = -curXm;
+        }
+        const rot = parseFloat(cfg.rotation) || 0;
+        const baseRad = (rot - 90) * Math.PI / 180.0;
+        const yVecX = Math.cos(baseRad);
+        const yVecY = Math.sin(baseRad);
+        const xVecX = Math.cos(baseRad + (Math.PI / 2));
+        const xVecY = Math.sin(baseRad + (Math.PI / 2));
+        const ox = parseFloat(cfg.origin_x) || 50;
+        const oy = parseFloat(cfg.origin_y) || 50;
+        const sx = parseFloat(cfg.scale_x) || 5;
+        const sy = parseFloat(cfg.scale_y) || 5;
+        const px = ox + (curXm * sx * xVecX) + (ym * sy * yVecX);
+        const py = oy + (curXm * sx * xVecY) + (ym * sy * yVecY);
+        return [parseFloat(px.toFixed(2)), parseFloat(py.toFixed(2))];
+    }
     getCentroid(points) {
         if (!points || points.length === 0) return [0, 0];
         let sx = 0, sy = 0;

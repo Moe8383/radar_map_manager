@@ -112,7 +112,7 @@ class RadarCoordinator:
         if zone_type in ["include_zones", "exclude_zones", "entrance_zones", "stationary_zones"]:
             self.data["maps"][target_map]["zones"][zone_type] = points
             await self.async_save()
-    async def async_update_layout(self, radar_name, layout, map_group=None):
+    async def async_update_layout(self, radar_name, layout, map_group=None, zones=None):
         if radar_name in self.data["radars"]:
             current = self.data["radars"][radar_name].get("layout", {})
             current.update(layout)
@@ -121,6 +121,10 @@ class RadarCoordinator:
                 self.data["radars"][radar_name]["map_group"] = map_group
                 if map_group not in self.data["maps"]:
                     self.data["maps"][map_group] = {"zones": {"include_zones": [], "exclude_zones": []}}
+            if zones and isinstance(zones, dict):
+                for z_type, z_pts in zones.items():
+                    if z_type in ["hw_detect_zones", "hw_block_zones", "hw_stay_zones", "monitor_zones"]:
+                        self.data["radars"][radar_name][z_type] = z_pts
             await self.async_save()
     async def async_update_map_config(self, map_group, config_data):
         if map_group not in self.data["maps"]:

@@ -1,7 +1,7 @@
-import { RadarMath } from './radar-math.js?v=1.3.15';
-import { RadarUI } from './radar-ui.js?v=1.3.15';
-import { RadarRenderer } from './radar-renderer.js?v=1.3.15'; 
-import { RadarEditor } from './radar-editor.js?v=1.3.15';
+import { RadarMath } from './radar-math.js?v=1.3.24';
+import { RadarUI } from './radar-ui.js?v=1.3.24';
+import { RadarRenderer } from './radar-renderer.js?v=1.3.24'; 
+import { RadarEditor } from './radar-editor.js?v=1.3.24';
 const CARD_I18N = {
     "proxy_ok": { "zh": "[RMM VIP] 雷达 {0} 代理认证成功！专属高频点云已通过 HA 隧道激活。", "en": "[RMM VIP] Radar {0} proxy auth successful! Exclusive high-frequency point cloud activated via HA tunnel." },
     "proxy_fail": { "zh": "[RMM VIP] 代理中继连接失败 ({0})，已静默降级为 MQTT 模式。", "en": "[RMM VIP] Proxy relay connection failed ({0}), silently downgraded to MQTT mode." }
@@ -35,7 +35,11 @@ class RadarMapCardNative extends HTMLElement {
             aspectRatio: 1.0,
             mapGroup: "default",
             isAddingNew: false,
-            mousePos: null 
+            mousePos: null,
+            followZonesEnabled: false,
+            followZoneTypes: { hw_detect_zones: true, hw_block_zones: false, hw_stay_zones: false },
+            hasHwZoneChanges: false,
+            origFollowZonesSnapshot: null
         };
         this.ignoreUpdatesUntil = 0;
         this.isCreated = false;
@@ -114,7 +118,15 @@ class RadarMapCardNative extends HTMLElement {
             console.log("[RMM] HA Connection changed (Wake up from sleep). Resubscribing...");
             if (this._authUnsubscribe) { this._authUnsubscribe(); this._authUnsubscribe = null; }
             if (this._streamUnsubscribe) { this._streamUnsubscribe(); this._streamUnsubscribe = null; }
+            this._streamSubscribing = false;
             this._authListenerAdded = false;
+            if (this.wsConnections) {
+                Object.values(this.wsConnections).forEach(ws => {
+                    if (ws.unsubscribe) { try { ws.unsubscribe(); } catch(e) {} }
+                    ws.unsubscribe = null;
+                    ws.isConnecting = false;
+                });
+            }
         }
         this._hass = h;
         this.state.rawHass = h;
@@ -134,14 +146,20 @@ class RadarMapCardNative extends HTMLElement {
                 }
             }, "rmm_auth_result").then(unsub => {
                 this._authUnsubscribe = unsub;
+            }).catch(() => {
+                this._authListenerAdded = false;
             }); 
         }
-        if (!this._streamUnsubscribe && h && h.connection) {
+        if (!this._streamUnsubscribe && !this._streamSubscribing && h && h.connection) {
+            this._streamSubscribing = true;
             h.connection.subscribeMessage(
                 (message) => { this.handleNewData(message.data); },
                 { type: 'rmm/stream' }
             ).then(unsub => {
                 this._streamUnsubscribe = unsub;
+                this._streamSubscribing = false;
+            }).catch(() => {
+                this._streamSubscribing = false;
             });
         }
         if (this.isCreated) {
@@ -598,7 +616,14 @@ class RadarMapCardNative extends HTMLElement {
                 that.fetchData(true); 
             },
             onTypeChange: (val) => { that.state.type = val; that.resetSelection(); },
-            onRadarChange: (val) => { that.state.radar = val; that.resetSelection(); that.ui.updateRadarList(that.state, that.config); },
+            onRadarChange: (val) => { 
+                that.state.radar = val; 
+                that.resetSelection(); 
+                that.state.followZonesEnabled = false; 
+                that.state.hasHwZoneChanges = false; 
+                that.state.origFollowZonesSnapshot = null; 
+                that.ui.updateRadarList(that.state, that.config); 
+            },
             onLayoutParamChange: (k, v) => { 
                 if(!that.state.layoutChanges) that.state.layoutChanges = {};
                 that.state.layoutChanges[k] = v; 
@@ -631,13 +656,24 @@ class RadarMapCardNative extends HTMLElement {
                     const hVal = parseFloat(targetHeight);
                     if (!isNaN(hVal)) {
                         let safeName = that.state.radar.toLowerCase().replace(/ /g, "_").replace(/-/g, "_");
-                        let hEntId = `number.${safeName}_radar_height`;
-                        if (that._hass && !that._hass.states[hEntId]) {
-                            const found = Object.keys(that._hass.states).find(k => 
-                                k.startsWith(`number.${safeName}`) && 
-                                (k.includes('radar_height') || k.includes('install_height') || k.includes('height'))
-                            );
-                            if (found) hEntId = found;
+                        let hEntId = null;
+                        const candidatesH = [
+                            `number.${safeName}_install_height`,
+                            `number.${safeName}_radar_height`,
+                            `number.${safeName}_mount_height`
+                        ];
+                        if (that._hass) {
+                            for (const c of candidatesH) {
+                                if (that._hass.states[c]) { hEntId = c; break; }
+                            }
+                            if (!hEntId) {
+                                const found = Object.keys(that._hass.states).find(k => 
+                                    k.startsWith(`number.${safeName}`) && 
+                                    !k.includes('fall') && 
+                                    (k.includes('install_height') || k.includes('radar_height') || k.includes('mount_height'))
+                                );
+                                if (found) hEntId = found;
+                            }
                         }
                         if (that._hass && that._hass.states[hEntId] && that._hass.states[hEntId].state !== 'unavailable' && that._hass.states[hEntId].state !== 'unknown') {
                             if (Math.abs(parseFloat(that._hass.states[hEntId].state) - hVal) > 0.01) {
@@ -654,21 +690,52 @@ class RadarMapCardNative extends HTMLElement {
                     const zMin = newLayout.z_min !== undefined ? parseFloat(newLayout.z_min) : (that.state.layoutChanges.z_min !== undefined ? parseFloat(that.state.layoutChanges.z_min) : -6.0);
                     const zMax = newLayout.z_max !== undefined ? parseFloat(newLayout.z_max) : (that.state.layoutChanges.z_max !== undefined ? parseFloat(that.state.layoutChanges.z_max) : 6.0);
                     if (!isNaN(zMin) && !isNaN(zMax)) {
-                        that._hass.callService("mqtt", "publish", {
-                            topic: `rmm_radar/${that.state.radar}/z_range/set`,
-                            payload: JSON.stringify({ min: zMin, max: zMax }),
-                            retain: true
-                        }).catch(e => console.warn("Failed to publish z_range in onSaveLayout:", e));
+                        newLayout.z_min = zMin;
+                        newLayout.z_max = zMax;
                     }
                 }
                 try {
-                    await that._hass.callService('radar_map_manager', 'update_radar_layout', {
-                        radar_name: that.state.radar, layout: newLayout, map_group: that.state.mapGroup
-                    });
-                    that.state.layoutChanges = {};
-                    that.state.hasUnsavedChanges = false;
-                    that.fetchData(true);
-                    alert(that.editor.t("layout_saved"));
+                    const svcPayload = {
+                        radar_name: that.state.radar,
+                        layout: newLayout,
+                        map_group: that.state.mapGroup
+                    };
+                    if (that.state.followZonesEnabled && that.state.hasHwZoneChanges) {
+                        const zonesToSave = {};
+                        ['hw_detect_zones', 'hw_block_zones', 'hw_stay_zones'].forEach(zType => {
+                            if (r[zType] !== undefined) {
+                                zonesToSave[zType] = JSON.parse(JSON.stringify(r[zType]));
+                            }
+                        });
+                        svcPayload.zones = zonesToSave;
+                        if (that.fullRawData && that.fullRawData.radars && that.fullRawData.radars[that.state.radar]) {
+                            Object.assign(that.fullRawData.radars[that.state.radar], zonesToSave);
+                        }
+                    }
+                    let saveSuccess = false;
+                    try {
+                        await that._hass.callService('radar_map_manager', 'update_radar_layout', svcPayload);
+                        saveSuccess = true;
+                    } catch (callErr) {
+                        if (callErr && (callErr.code === 3 || (callErr.message && callErr.message.includes('Connection lost')))) {
+                            console.warn("RMM: onSaveLayout encountered Connection lost, retrying after 1.5s...", callErr);
+                            await new Promise(res => setTimeout(res, 1500));
+                            if (that._hass && that._hass.callService) {
+                                await that._hass.callService('radar_map_manager', 'update_radar_layout', svcPayload);
+                                saveSuccess = true;
+                            }
+                        } else {
+                            throw callErr;
+                        }
+                    }
+                    if (saveSuccess) {
+                        that.state.layoutChanges = {};
+                        that.state.hasUnsavedChanges = false;
+                        that.state.hasHwZoneChanges = false;
+                        that.state.origFollowZonesSnapshot = null;
+                        that.fetchData(true);
+                        alert(that.editor.t("layout_saved"));
+                    }
                 } catch (err) {
                     console.error("RMM: onSaveLayout failed:", err);
                     alert(that.editor.t("ha_reject") + (err.message || err));
@@ -816,13 +883,17 @@ function registerCard() {
         );
     }
     window.customCards = window.customCards || [];
-    if (!window.customCards.some(c => c.type === 'radar-map-card')) {
-        window.customCards.push({
-          type: "radar-map-card",
-          name: "Radar Map Manager",
-          preview: false, 
-          description: "Advanced visual editor for radar fusion and zones."
-        });
+    const cardDef = {
+        type: "radar-map-card",
+        name: "Radar Map Card (Radar Map Manager)",
+        preview: false, 
+        description: "Advanced visual editor and radar map card for millimeter-wave radars, target tracking, and zone management."
+    };
+    const cardIndex = window.customCards.findIndex(c => c.type === 'radar-map-card');
+    if (cardIndex >= 0) {
+        window.customCards[cardIndex] = cardDef;
+    } else {
+        window.customCards.push(cardDef);
     }
 }
 registerCard();

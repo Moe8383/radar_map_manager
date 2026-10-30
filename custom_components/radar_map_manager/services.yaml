@@ -100,6 +100,12 @@ update_radar_layout:
       required: false
       selector:
         text:
+    zones:
+      name: Zones
+      description: Optional dictionary containing updated hardware zones to apply atomically with layout.
+      required: false
+      selector:
+        object:
 
 generate_radar_config:
   name: Apply Configuration

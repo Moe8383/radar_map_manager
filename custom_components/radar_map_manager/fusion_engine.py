@@ -45,8 +45,8 @@ class FusionEngine:
                     map_has_3d[map_group] = True
                 if self.hass and is_3d:
                     sw = self.hass.states.get(f"switch.{safe_r}_fall_alert")
-                    num_h = self.hass.states.get(f"number.{safe_r}_fall_height")
-                    num_t = self.hass.states.get(f"number.{safe_r}_fall_duration")
+                    num_h = self.hass.states.get(f"number.{safe_r}_fall_height") or self.hass.states.get(f"number.{safe_r}_fall_height_threshold")
+                    num_t = self.hass.states.get(f"number.{safe_r}_fall_duration") or self.hass.states.get(f"number.{safe_r}_fall_confirmation_delay")
                     cfg = map_radar_fall_cfg.setdefault(map_group, {})
                     if sw and sw.state in ['on', 'off']:
                         cfg['sw_enabled'] = (sw.state == 'on')
@@ -56,9 +56,11 @@ class FusionEngine:
                     if num_t and num_t.state not in ['unavailable', 'unknown']:
                         try: cfg['duration'] = float(num_t.state)
                         except ValueError: pass
-                radar_h_entity = self.hass.states.get(f"number.{safe_r}_radar_height") if self.hass else None
+                radar_h_entity = self.hass.states.get(f"number.{safe_r}_install_height") if self.hass else None
                 if not radar_h_entity and self.hass:
-                    radar_h_entity = self.hass.states.get(f"number.{safe_r}_install_height")
+                    radar_h_entity = self.hass.states.get(f"number.{safe_r}_radar_height")
+                if not radar_h_entity and self.hass:
+                    radar_h_entity = self.hass.states.get(f"number.{safe_r}_mount_height")
                 if radar_h_entity and radar_h_entity.state not in ['unavailable', 'unknown']:
                     try: radar_h = float(radar_h_entity.state)
                     except ValueError: radar_h = float(layout.get('mount_height', 2.5))
@@ -592,6 +594,18 @@ class FusionEngine:
         }
         self.hass.states.async_set(entity_id, str(active_count), attrs)
     def _point_in_polygon(self, x, y, poly):
+        if not poly or len(poly) < 3:
+            return False
+        min_x = max_x = poly[0][0]
+        min_y = max_y = poly[0][1]
+        for p in poly[1:]:
+            px, py = p[0], p[1]
+            if px < min_x: min_x = px
+            elif px > max_x: max_x = px
+            if py < min_y: min_y = py
+            elif py > max_y: max_y = py
+        if x < min_x or x > max_x or y < min_y or y > max_y:
+            return False
         n = len(poly)
         inside = False
         p1x, p1y = poly[0]

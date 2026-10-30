@@ -127,6 +127,7 @@ UPDATE_LAYOUT_SCHEMA = vol.Schema({
     vol.Required("radar_name"): cv.string,
     vol.Required("layout"): dict,
     vol.Optional("map_group"): cv.string,
+    vol.Optional("zones"): dict,
 })
 UPDATE_MAP_CONFIG_SCHEMA = vol.Schema({
     vol.Required("map_group"): cv.string,
@@ -488,7 +489,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         radar_name = call.data["radar_name"]
         layout = call.data["layout"]
         map_group = call.data.get("map_group")
-        await coordinator.async_update_layout(radar_name, layout, map_group)
+        zones = call.data.get("zones")
+        await coordinator.async_update_layout(radar_name, layout, map_group, zones=zones)
         if "z_min" in layout and "z_max" in layout:
             try:
                 z_payload = json.dumps({"min": float(layout["z_min"]), "max": float(layout["z_max"])})
@@ -1149,10 +1151,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             try:
                 async for ws_msg in ws:
                     if ws_msg.type == aiohttp.WSMsgType.TEXT:
+                        if hasattr(connection, "_to_write") and connection._to_write.qsize() > 60:
+                            continue
                         connection.send_message(websocket_api.event_message(msg["id"], {"raw": ws_msg.data}))
             finally:
                 await ws.close()
-                connection.send_message(websocket_api.event_message(msg["id"], {"event": "closed"}))
+                if hasattr(connection, "_to_write") and connection._to_write.qsize() <= 60:
+                    connection.send_message(websocket_api.event_message(msg["id"], {"event": "closed"}))
         task = hass.async_create_task(forward_loop())
         connection.subscriptions[msg["id"]] = lambda: task.cancel() or hass.async_create_task(ws.close())
     try:
@@ -1166,6 +1171,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     def websocket_global_stream(hass, connection, msg):
         @callback
         def send_update(data):
+            if hasattr(connection, "_to_write") and connection._to_write.qsize() > 60:
+                return
             connection.send_message(websocket_api.event_message(msg["id"], {"data": data}))
         unsub = async_dispatcher_connect(hass, "rmm_stream_update", send_update)
         connection.subscriptions[msg["id"]] = unsub

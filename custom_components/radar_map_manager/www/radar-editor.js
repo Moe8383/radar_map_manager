@@ -244,6 +244,14 @@ export class RadarEditor {
         bindClick('btn-mode-layout', () => { exitAddMode(); state.type = 'monitor_zones'; if(callbacks.onModeChange) callbacks.onModeChange('layout'); });
         bindClick('btn-mode-zone', () => { exitAddMode(); state.type = 'include_zones'; if(callbacks.onModeChange) callbacks.onModeChange('zone'); }); 
         bindClick('btn-mode-settings', () => { exitAddMode(); if(callbacks.onModeChange) callbacks.onModeChange('settings'); });
+        bindClick('btn-zone-view-mode', () => {
+            const cur = state.zone_view_mode || 'focus';
+            if (cur === 'focus') state.zone_view_mode = 'all';
+            else if (cur === 'all') state.zone_view_mode = 'hidden';
+            else state.zone_view_mode = 'focus';
+            this.ui.updateZoneViewModeBtn(state);
+            this.renderer.draw(state, config, state.hass);
+        });
         bindClick('btn-edit-fov', () => { 
             if (!state.fov_edit_mode && state.editMode === 'layout' && (state.radar_zone_type === 'hw_detect_zones' || state.radar_zone_type === 'hw_block_zones' || state.radar_zone_type === 'hw_stay_zones')) {
                 const radarData = state.data[state.radar] || {};
@@ -308,6 +316,25 @@ export class RadarEditor {
         bindLayoutInput(this, 'layout-sy', 'scale_y', callbacks);
         bindLayoutInput(this, 'layout-ceiling', 'ceiling_mount', callbacks, true);
         bindLayoutInput(this, 'layout-mirror', 'mirror_x', callbacks, true); 
+        const chkFollow = this.root.getElementById('layout-follow-zones');
+        if (chkFollow) {
+            chkFollow.onchange = (e) => {
+                state.followZonesEnabled = e.target.checked;
+                this.ui.updateFollowZonesUI(state);
+            };
+        }
+        const followChips = this.root.querySelectorAll('.follow-chip');
+        followChips.forEach(chip => {
+            chip.onclick = () => {
+                if (!state.followZonesEnabled) return;
+                const type = chip.dataset.type;
+                if (!state.followZoneTypes) {
+                    state.followZoneTypes = { hw_detect_zones: true, hw_block_zones: false, hw_stay_zones: false };
+                }
+                state.followZoneTypes[type] = !state.followZoneTypes[type];
+                this.ui.updateFollowZonesUI(state);
+            };
+        });
         const selLayoutRadarType = this.root.getElementById('layout-radar-type');
         if(selLayoutRadarType) selLayoutRadarType.onchange = (e) => { 
             if(callbacks.onLayoutParamChange) callbacks.onLayoutParamChange('radar_type', parseInt(e.target.value)); 
@@ -318,15 +345,26 @@ export class RadarEditor {
                 const val = parseFloat(e.target.value);
                 if (isNaN(val)) return;
                 let safeName = state.radar?.toLowerCase().replace(/ /g, "_").replace(/-/g, "_");
-                let hEntId = `number.${safeName}_radar_height`;
-                if (state.hass && !state.hass.states[hEntId]) {
-                    const found = Object.keys(state.hass.states).find(k => 
-                        k.startsWith(`number.${safeName}`) && 
-                        (k.includes('radar_height') || k.includes('install_height') || k.includes('height'))
-                    );
-                    if (found) hEntId = found;
+                let hEntId = null;
+                const candidates = [
+                    `number.${safeName}_install_height`,
+                    `number.${safeName}_radar_height`,
+                    `number.${safeName}_mount_height`
+                ];
+                if (state.hass) {
+                    for (const c of candidates) {
+                        if (state.hass.states[c]) { hEntId = c; break; }
+                    }
+                    if (!hEntId) {
+                        const found = Object.keys(state.hass.states).find(k => 
+                            k.startsWith(`number.${safeName}`) && 
+                            !k.includes('fall') && 
+                            (k.includes('install_height') || k.includes('radar_height') || k.includes('mount_height'))
+                        );
+                        if (found) hEntId = found;
+                    }
                 }
-                if (state.hass && state.hass.states[hEntId] && state.hass.states[hEntId].state !== 'unavailable' && state.hass.states[hEntId].state !== 'unknown') {
+                if (hEntId && state.hass && state.hass.states[hEntId] && state.hass.states[hEntId].state !== 'unavailable' && state.hass.states[hEntId].state !== 'unknown') {
                     state.hass.callService('number', 'set_value', { entity_id: hEntId, value: String(val) });
                 }
                 if (callbacks.onLayoutParamChange) callbacks.onLayoutParamChange('mount_height', val);
@@ -968,6 +1006,20 @@ export class RadarEditor {
             if (state.calibration && state.calibration.active) {
                 state.calibration = { active: false, raw: null, map: null };
             }
+            if (state.origFollowZonesSnapshot && state.radar && state.data[state.radar]) {
+                const rData = state.data[state.radar];
+                if (state.origFollowZonesSnapshot.hw_detect_zones) {
+                    rData.hw_detect_zones = JSON.parse(JSON.stringify(state.origFollowZonesSnapshot.hw_detect_zones));
+                }
+                if (state.origFollowZonesSnapshot.hw_block_zones) {
+                    rData.hw_block_zones = JSON.parse(JSON.stringify(state.origFollowZonesSnapshot.hw_block_zones));
+                }
+                if (state.origFollowZonesSnapshot.hw_stay_zones) {
+                    rData.hw_stay_zones = JSON.parse(JSON.stringify(state.origFollowZonesSnapshot.hw_stay_zones));
+                }
+                state.origFollowZonesSnapshot = null;
+                state.hasHwZoneChanges = false;
+            }
             this.ui.updateLayoutInputs(state, state.hass); 
             this.renderer.draw(state, config, state.hass); 
             this.ui.updateStatus(state, config);
@@ -1372,6 +1424,10 @@ export class RadarEditor {
                 e.preventDefault();
                 clickLayer.style.cursor = "grabbing";
                 if (!state.dragState.hasMoved) {
+                    if (state.dragState.startX !== undefined && state.dragState.startY !== undefined) {
+                        const dist = Math.hypot(mx - state.dragState.startX, my - state.dragState.startY);
+                        if (dist < 0.6) return;
+                    }
                     state.dragState.hasMoved = true;
                     if (state.dragState.type === 'point' || state.dragState.type === 'zone') {
                         state.hasUnsavedChanges = true; 
@@ -1388,12 +1444,20 @@ export class RadarEditor {
                     const snap = 45; const thr = 5;
                     const rem = angleDeg % snap;
                     if (rem < thr) angleDeg -= rem; else if (rem > (snap - thr)) angleDeg += (snap - rem);
-                    if(callbacks.onLayoutParamChange) callbacks.onLayoutParamChange('rotation', Math.round(angleDeg));
+                    const newRot = Math.round(angleDeg);
+                    if(callbacks.onLayoutParamChange) callbacks.onLayoutParamChange('rotation', newRot);
+                    if (state.dragState.followCache) {
+                        this._applyFollowZones(state, { ...cfg, rotation: newRot }, state.dragState.followCache);
+                    }
                 }
                 else if (state.dragState.type === 'radar_move') {
                     if(callbacks.onLayoutParamChange) {
                         callbacks.onLayoutParamChange('origin_x', mx);
                         callbacks.onLayoutParamChange('origin_y', my);
+                    }
+                    if (state.dragState.followCache) {
+                        const cfg = this.renderer.getRadarConfig(state, state.radar, state.hass);
+                        this._applyFollowZones(state, { ...cfg, origin_x: mx, origin_y: my }, state.dragState.followCache);
                     }
                     const elX = this.root.getElementById('layout-x');
                     const elY = this.root.getElementById('layout-y');
@@ -1405,11 +1469,21 @@ export class RadarEditor {
                     if (list && list[state.dragState.polyIndex]) {
                         const z = list[state.dragState.polyIndex]; const p = Array.isArray(z) ? z : z.points;
                         if(p && p[state.dragState.pointIndex]) {
-                            p[state.dragState.pointIndex] = [mx, my];
+                            let targetX = mx;
+                            let targetY = my;
+                            if (state.dragState.origPoint) {
+                                const dx = mx - state.dragState.startX;
+                                const dy = my - state.dragState.startY;
+                                targetX = Math.max(0, Math.min(100, state.dragState.origPoint[0] + dx));
+                                targetY = Math.max(0, Math.min(100, state.dragState.origPoint[1] + dy));
+                            }
+                            targetX = parseFloat(targetX.toFixed(2));
+                            targetY = parseFloat(targetY.toFixed(2));
+                            p[state.dragState.pointIndex] = [targetX, targetY];
                             const ptX = this.root.getElementById('pt-x');
                             const ptY = this.root.getElementById('pt-y');
-                            if(ptX) ptX.value = mx.toFixed(1);
-                            if(ptY) ptY.value = my.toFixed(1);
+                            if(ptX) ptX.value = targetX.toFixed(1);
+                            if(ptY) ptY.value = targetY.toFixed(1);
                         }
                     }
                 }
@@ -1593,7 +1667,8 @@ export class RadarEditor {
                     const handlePos = this.renderer.calculateStandardCoord({...cfg, mirror_x: false, enable_correction: false}, 0, 4000);
                     const distRot = Math.sqrt(Math.pow(mx - handlePos.left, 2) + Math.pow(my - handlePos.top, 2));
                     if (distRot < 3) { 
-                        state.dragState = { isDragging: true, hasMoved: false, type: 'radar_rotate', radar: state.radar, startAngle: cfg.rotation };
+                        const followCache = this._captureFollowZonesLocalCoords(state);
+                        state.dragState = { isDragging: true, hasMoved: false, type: 'radar_rotate', radar: state.radar, startAngle: cfg.rotation, followCache };
                         clickLayer.setPointerCapture(e.pointerId);
                         return;
                     }
@@ -1616,7 +1691,8 @@ export class RadarEditor {
                         });
                         return; 
                     }
-                    state.dragState = { isDragging: true, hasMoved: false, type: 'radar_move', startX: mx, startY: my };
+                    const followCache = this._captureFollowZonesLocalCoords(state);
+                    state.dragState = { isDragging: true, hasMoved: false, type: 'radar_move', startX: mx, startY: my, followCache };
                     clickLayer.setPointerCapture(e.pointerId);
                 }
                 return; 
@@ -1628,7 +1704,17 @@ export class RadarEditor {
                 for(let j=0; j<pts.length; j++) {
                     if(Math.abs(pts[j][0]-mx) < hitThreshold && Math.abs(pts[j][1]-my) < hitThreshold) {
                         if(isDbl) { if(callbacks.deletePoint) callbacks.deletePoint(i, j); return; }
-                        state.dragState = { isDragging: true, hasMoved: false, type: 'point', polyIndex: i, pointIndex: j, startSnapshot: JSON.stringify(state.data) };
+                        state.dragState = {
+                            isDragging: true,
+                            hasMoved: false,
+                            type: 'point',
+                            polyIndex: i,
+                            pointIndex: j,
+                            startX: mx,
+                            startY: my,
+                            origPoint: [pts[j][0], pts[j][1]],
+                            startSnapshot: JSON.stringify(state.data)
+                        };
                         clickLayer.setPointerCapture(e.pointerId); 
                         setTimeout(() => {
                             if(callbacks.selectZone) callbacks.selectZone(i, j, z); 
@@ -1702,6 +1788,43 @@ export class RadarEditor {
                 }
             }
             if (!hit) {
+                if (state.selectedIndex !== null && activeList[state.selectedIndex]) {
+                    const curZ = activeList[state.selectedIndex];
+                    const curPts = Array.isArray(curZ) ? curZ : curZ.points;
+                    if (state.selectedPointIndex !== null && curPts && curPts[state.selectedPointIndex]) {
+                        const curPt = curPts[state.selectedPointIndex];
+                        state.dragState = {
+                            isDragging: true,
+                            hasMoved: false,
+                            isRemoteDrag: true,
+                            type: 'point',
+                            polyIndex: state.selectedIndex,
+                            pointIndex: state.selectedPointIndex,
+                            startX: mx,
+                            startY: my,
+                            origPoint: [curPt[0], curPt[1]],
+                            startSnapshot: JSON.stringify(state.data)
+                        };
+                        clickLayer.setPointerCapture(e.pointerId);
+                        hit = true;
+                    } else if (curPts && curPts.length > 0) {
+                        state.dragState = {
+                            isDragging: true,
+                            hasMoved: false,
+                            isRemoteDrag: true,
+                            type: 'zone',
+                            polyIndex: state.selectedIndex,
+                            startX: mx,
+                            startY: my,
+                            origPoints: curPts.map(p => [...p]),
+                            startSnapshot: JSON.stringify(state.data)
+                        };
+                        clickLayer.setPointerCapture(e.pointerId);
+                        hit = true;
+                    }
+                }
+            }
+            if (!hit) {
                 if (state.selectedIndex !== null) { 
                     if(callbacks.resetSelection) callbacks.resetSelection(); 
                     this.renderer.draw(state, config, state.hass); 
@@ -1756,15 +1879,78 @@ export class RadarEditor {
                     }
                 } else {
                     state.dragState.startSnapshot = null;
+                    if (state.dragState.isRemoteDrag) {
+                        if (callbacks.resetSelection) callbacks.resetSelection();
+                    }
                 }
                 state.dragState.isDragging = false; 
                 state.dragState.hasMoved = false;
-                clickLayer.releasePointerCapture(e.pointerId); 
+                state.dragState.isRemoteDrag = false;
+                try {
+                    if (clickLayer.hasPointerCapture && clickLayer.hasPointerCapture(e.pointerId)) {
+                        clickLayer.releasePointerCapture(e.pointerId);
+                    }
+                } catch (err) {}
                 clickLayer.style.cursor = "default";
                 this.ui.updateStatus(state, config);
                 this.renderer.draw(state, config, state.hass);
             }
         };
+        clickLayer.onpointercancel = clickLayer.onpointerup;
+    }
+    _captureFollowZonesLocalCoords(state) {
+        if (!state.followZonesEnabled || !state.radar || !state.data[state.radar]) return null;
+        const cfg = this.renderer.getRadarConfig(state, state.radar, state.hass);
+        const rData = state.data[state.radar];
+        if (!state.origFollowZonesSnapshot) {
+            state.origFollowZonesSnapshot = {
+                hw_detect_zones: JSON.parse(JSON.stringify(rData.hw_detect_zones || [])),
+                hw_block_zones: JSON.parse(JSON.stringify(rData.hw_block_zones || [])),
+                hw_stay_zones: JSON.parse(JSON.stringify(rData.hw_stay_zones || []))
+            };
+        }
+        const items = [];
+        const types = ['hw_detect_zones', 'hw_block_zones', 'hw_stay_zones'];
+        types.forEach(type => {
+            if (state.followZoneTypes && state.followZoneTypes[type] && Array.isArray(rData[type])) {
+                rData[type].forEach((z, zIdx) => {
+                    const pts = Array.isArray(z) ? z : z.points;
+                    if (Array.isArray(pts)) {
+                        pts.forEach((p, pIdx) => {
+                            const local = this.renderer.math.canvasToRadarLocal(cfg, p[0], p[1]);
+                            items.push({ type, zIdx, pIdx, xm: local.xm, ym: local.ym });
+                        });
+                    }
+                });
+            }
+        });
+        return { cfg, items };
+    }
+    _applyFollowZones(state, currentLayout, followCache) {
+        if (!followCache || !followCache.items || followCache.items.length === 0) return;
+        const rData = state.data[state.radar];
+        if (!rData) return;
+        followCache.items.forEach(item => {
+            if (rData[item.type] && rData[item.type][item.zIdx]) {
+                const z = rData[item.type][item.zIdx];
+                const pts = Array.isArray(z) ? z : z.points;
+                if (pts && pts[item.pIdx]) {
+                    const newPt = this.renderer.math.radarLocalToCanvas(currentLayout, item.xm, item.ym);
+                    pts[item.pIdx][0] = newPt[0];
+                    pts[item.pIdx][1] = newPt[1];
+                }
+            }
+        });
+        state.hasHwZoneChanges = true;
+        state.hasUnsavedChanges = true;
+    }
+    _transformFollowZonesByParam(state, paramKey, newVal) {
+        if (!['origin_x', 'origin_y', 'rotation', 'scale_x', 'scale_y'].includes(paramKey)) return;
+        const followCache = this._captureFollowZonesLocalCoords(state);
+        if (!followCache) return;
+        const oldCfg = this.renderer.getRadarConfig(state, state.radar, state.hass);
+        const newCfg = { ...oldCfg, [paramKey]: newVal };
+        this._applyFollowZones(state, newCfg, followCache);
     }
 }
 function getActiveList(state) {
@@ -1792,6 +1978,9 @@ function bindStepper(editor, btnId, inputId, step, callbacks, paramKey) {
             val = parseFloat((val + step).toFixed(1));
             if (val < 1) val = 1; if (val > 20) val = 20;
             input.value = val;
+            if (editor._transformFollowZonesByParam && editor.host?.state?.followZonesEnabled) {
+                editor._transformFollowZonesByParam(editor.host.state, paramKey, val);
+            }
             if(callbacks.onLayoutParamChange) callbacks.onLayoutParamChange(paramKey, val);
         };
     }
@@ -1800,6 +1989,9 @@ function bindLayoutInput(editor, id, key, callbacks, isCheck = false) {
     const el = editor.root.getElementById(id);
     if (el) el.onchange = (e) => { 
         const val = isCheck ? e.target.checked : parseFloat(e.target.value);
+        if (editor._transformFollowZonesByParam && editor.host?.state?.followZonesEnabled) {
+            editor._transformFollowZonesByParam(editor.host.state, key, val);
+        }
         if(callbacks.onLayoutParamChange) callbacks.onLayoutParamChange(key, val); 
     };
 }

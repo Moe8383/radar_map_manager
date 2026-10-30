@@ -18,10 +18,21 @@ const UI_I18N = {
     "title_edit_fov": { zh: "绘制/编辑区域", en: "Draw Region" },
     "title_radar_web": { zh: "访问雷达 Web 控制台", en: "Visit Radar Web Console" },
     "title_radar_ota": { zh: "升级雷达硬件固件", en: "Upgrade Firmware" },
+    "tip_zone_view_focus": { zh: "防区视图：🎯 聚焦当前类型", en: "Zone View: 🎯 Focus Active Type" },
+    "tip_zone_view_all": { zh: "防区视图：🌐 全景微缩模式", en: "Zone View: 🌐 All Subtle Mode" },
+    "tip_zone_view_hidden": { zh: "防区视图：👁️‍🗨️ 隐藏防区几何", en: "Zone View: 👁️‍🗨️ Hide Zones" },
     "zone_monitor": { zh: "监控区 (Monitor)", en: "Monitor" },
     "zone_hw_detect": { zh: "硬件探测区 (Detect)", en: "HW Detect" },
     "zone_hw_block": { zh: "硬件屏蔽区 (Block)", en: "HW Block" },
     "zone_hw_stay": { zh: "硬件驻留区 (Stay)", en: "HW Stay" },
+    "lbl_follow_zones": { zh: "区域随动", en: "Zone Follow" },
+    "chip_follow_detect": { zh: "🟩 探测", en: "🟩 Det" },
+    "chip_follow_block": { zh: "🟥 屏蔽", en: "🟥 Blk" },
+    "chip_follow_stay": { zh: "🟪 驻留", en: "🟪 Stay" },
+    "tip_follow_zones": { zh: "移动或旋转雷达时，选中的硬件区域随本体同步变换", en: "Sync selected hardware zones with radar position & rotation" },
+    "tip_follow_detect": { zh: "硬件探测区 (Detect)", en: "HW Detect Zone" },
+    "tip_follow_block": { zh: "硬件屏蔽区 (Block)", en: "HW Block Zone" },
+    "tip_follow_stay": { zh: "硬件驻留区 (Stay)", en: "HW Stay Zone" },
     "lbl_x": { zh: "X", en: "X" },
     "lbl_y": { zh: "Y", en: "Y" },
     "lbl_rot": { zh: "角度", en: "Rot" },
@@ -72,6 +83,8 @@ const UI_I18N = {
     "scale_uncalib": { zh: "未标定", en: "Uncalib" },
     "lbl_opacity": { zh: "透明度", en: "Opacity" },
     "title_opacity": { zh: "面板整体透明度 (布局/防区/设置)", en: "Panel Opacity (Layout/Zones/Set)" },
+    "lbl_stroke": { zh: "线宽", en: "Stroke" },
+    "title_stroke": { zh: "防区线条基准粗细 (等比例联动缩放)", en: "Zone Stroke Width (Proportional Scaling)" },
     "lbl_interval": { zh: "间隔", en: "Interval" },
     "title_interval": { zh: "后端轮询与多目标融合计算间隔 (秒)", en: "Backend polling & calculation interval (seconds)" },
     "lbl_merge": { zh: "合并", en: "Merge" },
@@ -160,6 +173,24 @@ export class RadarUI {
         if (this.updateRadarList) {
             this.updateRadarList(state, config);
         }
+    }
+    updateZoneViewModeBtn(state) {
+        const btnZoneView = this.root.getElementById('btn-zone-view-mode');
+        if (!btnZoneView) return;
+        const viewMode = state?.zone_view_mode || 'focus';
+        if (viewMode === 'all') {
+            btnZoneView.innerText = '🌐';
+            btnZoneView.title = this.t('tip_zone_view_all', state);
+        } else if (viewMode === 'hidden') {
+            btnZoneView.innerText = '👁️‍🗨️';
+            btnZoneView.title = this.t('tip_zone_view_hidden', state);
+        } else {
+            btnZoneView.innerText = '🎯';
+            btnZoneView.title = this.t('tip_zone_view_focus', state);
+        }
+    }
+    updateTexts(state) {
+        this.updateZoneViewModeBtn(state);
     }
     applyTranslations(state, config) {
         const isZh = this.isZh(state);
@@ -253,6 +284,19 @@ export class RadarUI {
                 const chk = this.root.getElementById('chk-eng-mode');
                 if (chk) chk.title = t('title_point_cloud');
             }
+            const rowFollow = this.root.getElementById('row-follow-zones');
+            if (rowFollow) {
+                const lbl = rowFollow.querySelector('label span');
+                if (lbl) lbl.innerText = t('lbl_follow_zones');
+                const chk = this.root.getElementById('layout-follow-zones');
+                if (chk) chk.title = t('tip_follow_zones');
+                const chipDet = this.root.getElementById('chip-follow-detect');
+                if (chipDet) { chipDet.innerText = t('chip_follow_detect'); chipDet.title = t('tip_follow_detect'); }
+                const chipBlk = this.root.getElementById('chip-follow-block');
+                if (chipBlk) { chipBlk.innerText = t('chip_follow_block'); chipBlk.title = t('tip_follow_block'); }
+                const chipSty = this.root.getElementById('chip-follow-stay');
+                if (chipSty) { chipSty.innerText = t('chip_follow_stay'); chipSty.title = t('tip_follow_stay'); }
+            }
             const btnSaveLayout = this.root.getElementById('btn-save-layout');
             if (btnSaveLayout) btnSaveLayout.innerText = t('btn_save_layout');
             const btnCancelLayout = this.root.getElementById('btn-cancel-layout');
@@ -299,6 +343,13 @@ export class RadarUI {
             const lbl = rowOpac.querySelector('label');
             if (lbl) lbl.innerText = t('lbl_opacity');
         }
+        const rowStroke = this.root.querySelector('#set-stroke-range')?.closest('.row');
+        if (rowStroke) {
+            rowStroke.title = t('title_stroke');
+            const lbl = rowStroke.querySelector('label');
+            if (lbl) lbl.innerText = t('lbl_stroke');
+        }
+        this.updateZoneViewModeBtn(state);
         const rowInt = this.root.querySelector('#set-interval-range')?.closest('.row');
         if (rowInt) {
             rowInt.title = t('title_interval');
@@ -580,7 +631,7 @@ export class RadarUI {
             button.danger { background: #C62828 !important; border-color: #B71C1c !important; color: white !important; }
             button.info { background: #00838F !important; border-color: #006064 !important; color: white !important; }
             .point-editor { background: #1a1a1a; padding: 2px; border-radius: 2px; opacity: 0.5; pointer-events: none; border: 1px solid #333; }
-            .scroll-area { max-height: 110px; overflow-y: auto; overflow-x: hidden; padding-right: 2px; margin-right: -2px; }
+            .scroll-area { max-height: 115px; overflow-y: auto; overflow-x: hidden; padding-right: 2px; margin-right: -2px; }
             .scroll-area > * { flex-shrink: 0; } 
             .scroll-area::-webkit-scrollbar { width: 3px; }
             .scroll-area::-webkit-scrollbar-track { background: transparent; }
@@ -606,6 +657,7 @@ export class RadarUI {
     }
     renderPanel(state, config) {
         if (this.root.getElementById('edit-ui')) return;
+        const t = (k, a) => this.t(k, state, a);
         const div = document.createElement('div');
         div.id = 'edit-ui'; div.className = 'edit-ui';
         div.innerHTML = `
@@ -643,73 +695,87 @@ export class RadarUI {
                             </select>
                             <div style="display:flex; align-items:center; gap:2px; margin-left:auto; flex-shrink:0;">
                                 <button id="btn-auto-block" class="primary" style="display:none; width:auto; padding:0 8px; height:22px; font-size:10px; font-weight:bold; background:#1976D2; color:white; border:none; border-radius:9999px; cursor:pointer;" title="Auto Learn Block Zones">🪄 Auto</button>
+                                <button id="btn-zone-view-mode" type="button" class="view-chip" title="Zone View" style="width:22px; height:22px; padding:0; font-size:11px; border-radius:3px; cursor:pointer; background:rgba(128,128,128,0.15); border:1px solid rgba(128,128,128,0.3); color:var(--primary-text-color, #fff); display:inline-flex; align-items:center; justify-content:center;">🎯</button>
                                 <button id="btn-edit-fov" class="warning" style="width:22px; height:22px; padding:0; font-size:11px;" title="Draw Region">✏️</button>
-                                <button id="btn-radar-web" class="info" style="display:none; width:22px; height:22px; padding:0; font-size:11px;" title="访问雷达 Web 控制台">🌐</button>
+                                <button id="btn-radar-web" class="info" style="display:none; width:22px; height:22px; padding:0; font-size:11px;" title="访问雷达 Web 控制台">🔗</button>
                                 <button id="btn-radar-ota" class="primary" style="display:none; position:relative; width:22px; height:22px; padding:0; font-size:11px;" title="尝试升级 RMM 硬件固件">☁️</button>
                             </div>
                         </div>
-                        <div id="layout-inner-params">
-                            <div class="row">
-                                <label style="width:10px">X</label><input type="number" id="layout-x" step="1">
-                                <label style="width:10px">Y</label><input type="number" id="layout-y" step="1">
-                                <label style="width:20px">Rot</label><input type="number" id="layout-rot" step="1">
-                            </div>
-                            <div class="row">
-                                <label style="width:28px; white-space:nowrap;">ScX</label>
-                                <div class="slider-row">
-                                    <button class="stepper" id="btn-sx-minus">-</button>
-                                    <input type="range" id="layout-sx" min="1" max="20" step="0.1" class="slider">
-                                    <button class="stepper" id="btn-sx-plus">+</button>
-                                    <button class="calc-btn" id="btn-calc-ax" title="Calc X from Y">Ax</button>
+                        <div id="layout-scroll-area" class="scroll-area" style="display:flex; flex-direction:column; gap:3px;">
+                            <div id="row-follow-zones" class="row" style="display:none; justify-content:space-between; align-items:center; margin-bottom:4px; padding:2px 4px; background:var(--card-background-color, rgba(128,128,128,0.06)); border:1px solid var(--divider-color, rgba(128,128,128,0.15)); border-radius:4px; box-sizing:border-box;">
+                                <label class="chk-label" style="height:22px; padding:0 2px; font-size:11px; cursor:pointer;" title="${t('tip_follow_zones')}">
+                                    <input type="checkbox" id="layout-follow-zones" style="margin-right:4px;">
+                                    <span data-i18n="lbl_follow_zones">${t('lbl_follow_zones')}</span>
+                                </label>
+                                <div id="group-follow-chips" style="display:flex; align-items:center; gap:3px; opacity:0.35; pointer-events:none; transition:opacity 0.2s;">
+                                    <button type="button" class="follow-chip active" id="chip-follow-detect" data-type="hw_detect_zones" title="${t('tip_follow_detect')}" style="height:19px; padding:0 5px; font-size:10px; border-radius:3px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; border:1px solid #00e676; background:rgba(0,230,118,0.2); color:#00e676; font-weight:bold; box-sizing:border-box;">${t('chip_follow_detect')}</button>
+                                    <button type="button" class="follow-chip" id="chip-follow-block" data-type="hw_block_zones" title="${t('tip_follow_block')}" style="height:19px; padding:0 5px; font-size:10px; border-radius:3px; cursor:pointer; display:none; align-items:center; justify-content:center; border:1px solid var(--divider-color, rgba(128,128,128,0.3)); background:rgba(128,128,128,0.08); color:var(--secondary-text-color, #888); box-sizing:border-box;">${t('chip_follow_block')}</button>
+                                    <button type="button" class="follow-chip" id="chip-follow-stay" data-type="hw_stay_zones" title="${t('tip_follow_stay')}" style="height:19px; padding:0 5px; font-size:10px; border-radius:3px; cursor:pointer; display:none; align-items:center; justify-content:center; border:1px solid var(--divider-color, rgba(128,128,128,0.3)); background:rgba(128,128,128,0.08); color:var(--secondary-text-color, #888); box-sizing:border-box;">${t('chip_follow_stay')}</button>
                                 </div>
                             </div>
-                            <div class="row">
-                                <label style="width:28px; white-space:nowrap;">ScY</label>
-                                <div class="slider-row">
-                                    <button class="stepper" id="btn-sy-minus">-</button>
-                                    <input type="range" id="layout-sy" min="1" max="20" step="0.1" class="slider">
-                                    <button class="stepper" id="btn-sy-plus">+</button>
-                                    <button class="calc-btn" id="btn-calc-ay" title="Calc Y from X">Ay</button>
+                            <div id="layout-inner-params">
+                                <div class="row">
+                                    <label style="width:10px">X</label><input type="number" id="layout-x" step="1">
+                                    <label style="width:10px">Y</label><input type="number" id="layout-y" step="1">
+                                    <label style="width:20px">Rot</label><input type="number" id="layout-rot" step="1">
                                 </div>
-                            </div>
-                            <div class="row" style="justify-content: space-between; align-items: center; gap: 3px;">
-                                <div style="display:flex; align-items: center; gap:3px; flex-shrink: 0;">
-                                    <label class="chk-label" style="height:22px; box-sizing:border-box; padding:0 6px;"><input type="checkbox" id="layout-ceiling"><span>Ceiling</span></label>
-                                    <label class="chk-label" style="height:22px; box-sizing:border-box; padding:0 6px;"><input type="checkbox" id="layout-mirror"><span>Mirror</span></label>
-                                    <select id="layout-radar-type" style="width:38px; height:22px; box-sizing:border-box; background:#222; color:white; border:1px solid #333; border-radius:3px; padding:0 1px; font-size:10px; cursor:pointer;" title="Radar Dimension Type">
-                                        <option value="1">2D</option>
-                                        <option value="2">2.5D</option>
-                                        <option value="3">3D</option>
-                                    </select>
+                                <div class="row">
+                                    <label style="width:28px; white-space:nowrap;">ScX</label>
+                                    <div class="slider-row">
+                                        <button class="stepper" id="btn-sx-minus">-</button>
+                                        <input type="range" id="layout-sx" min="1" max="20" step="0.1" class="slider">
+                                        <button class="stepper" id="btn-sx-plus">+</button>
+                                        <button class="calc-btn" id="btn-calc-ax" title="Calc X from Y">Ax</button>
+                                    </div>
                                 </div>
-                                <div id="group-height" style="display:flex; align-items:center; height:22px; flex-shrink: 0; gap:2px;">
-                                    <label style="width:auto; font-size:9px; color:#aaa; margin:0;" title="雷达安装高度 (米) / Radar Height (m)">H</label>
-                                    <input type="number" id="layout-h" step="0.05" min="0.5" max="6.0" style="width:36px; height:22px; box-sizing:border-box; padding:0 1px; text-align:center; font-size:10px;" title="雷达安装高度 (米) / Radar Height (m)">
-                                    <span style="font-size:9px; color:#777; margin-left:1px;">m</span>
+                                <div class="row">
+                                    <label style="width:28px; white-space:nowrap;">ScY</label>
+                                    <div class="slider-row">
+                                        <button class="stepper" id="btn-sy-minus">-</button>
+                                        <input type="range" id="layout-sy" min="1" max="20" step="0.1" class="slider">
+                                        <button class="stepper" id="btn-sy-plus">+</button>
+                                        <button class="calc-btn" id="btn-calc-ay" title="Calc Y from X">Ay</button>
+                                    </div>
                                 </div>
-                            </div>
-                            <div class="row" id="row-z-range" style="justify-content: space-between; align-items: center; gap: 3px; margin-top: 3px;">
-                                <div style="display:flex; align-items:center; gap:2px; flex-shrink:0;">
-                                    <label style="width:auto; font-size:9px; color:#1976D2; font-weight:bold; margin:0;" title="感知高度范围 (Z-Axis Range)" data-i18n="lbl_z_range">Z-Range</label>
+                                <div class="row" style="justify-content: space-between; align-items: center; gap: 3px;">
+                                    <div style="display:flex; align-items: center; gap:3px; flex-shrink: 0;">
+                                        <label class="chk-label" style="height:22px; box-sizing:border-box; padding:0 6px;"><input type="checkbox" id="layout-ceiling"><span>Ceiling</span></label>
+                                        <label class="chk-label" style="height:22px; box-sizing:border-box; padding:0 6px;"><input type="checkbox" id="layout-mirror"><span>Mirror</span></label>
+                                        <select id="layout-radar-type" style="width:38px; height:22px; box-sizing:border-box; background:#222; color:white; border:1px solid #333; border-radius:3px; padding:0 1px; font-size:10px; cursor:pointer;" title="Radar Dimension Type">
+                                            <option value="1">2D</option>
+                                            <option value="2">2.5D</option>
+                                            <option value="3">3D</option>
+                                        </select>
+                                    </div>
+                                    <div id="group-height" style="display:flex; align-items:center; height:22px; flex-shrink: 0; gap:2px;">
+                                        <label style="width:auto; font-size:9px; color:#aaa; margin:0;" title="雷达安装高度 (米) / Radar Height (m)">H</label>
+                                        <input type="number" id="layout-h" step="0.05" min="0.5" max="6.0" style="width:36px; height:22px; box-sizing:border-box; padding:0 1px; text-align:center; font-size:10px;" title="雷达安装高度 (米) / Radar Height (m)">
+                                        <span style="font-size:9px; color:#777; margin-left:1px;">m</span>
+                                    </div>
                                 </div>
-                                <div style="display:flex; align-items:center; gap:2px; flex-shrink:0;">
-                                    <span style="font-size:9px; color:#888;">Min</span>
-                                    <input type="number" id="layout-z-min" step="0.1" min="-6.0" max="6.0" value="-6.0" style="width:34px; height:22px; box-sizing:border-box; padding:0 1px; text-align:center; font-size:10px;" title="Z Min (m)">
-                                    <span style="font-size:9px; color:#666;">~</span>
-                                    <span style="font-size:9px; color:#888;">Max</span>
-                                    <input type="number" id="layout-z-max" step="0.1" min="-6.0" max="6.0" value="6.0" style="width:34px; height:22px; box-sizing:border-box; padding:0 1px; text-align:center; font-size:10px;" title="Z Max (m)">
-                                    <span style="font-size:9px; color:#777; margin-left:1px;">m</span>
+                                <div class="row" id="row-z-range" style="justify-content: space-between; align-items: center; gap: 3px; margin-top: 3px;">
+                                    <div style="display:flex; align-items:center; gap:2px; flex-shrink:0;">
+                                        <label style="width:auto; font-size:9px; color:#1976D2; font-weight:bold; margin:0;" title="感知高度范围 (Z-Axis Range)" data-i18n="lbl_z_range">Z-Range</label>
+                                    </div>
+                                    <div style="display:flex; align-items:center; gap:2px; flex-shrink:0;">
+                                        <span style="font-size:9px; color:#888;">Min</span>
+                                        <input type="number" id="layout-z-min" step="0.1" min="-6.0" max="6.0" value="-6.0" style="width:34px; height:22px; box-sizing:border-box; padding:0 1px; text-align:center; font-size:10px;" title="Z Min (m)">
+                                        <span style="font-size:9px; color:#666;">~</span>
+                                        <span style="font-size:9px; color:#888;">Max</span>
+                                        <input type="number" id="layout-z-max" step="0.1" min="-6.0" max="6.0" value="6.0" style="width:34px; height:22px; box-sizing:border-box; padding:0 1px; text-align:center; font-size:10px;" title="Z Max (m)">
+                                        <span style="font-size:9px; color:#777; margin-left:1px;">m</span>
+                                    </div>
                                 </div>
-                            </div>
-                            <div class="row" id="row-point-cloud" style="display:none; justify-content: flex-end; margin-top: 4px;">
-                                <label style="width:auto; text-align:right; color:#00e5ff; font-weight:bold; margin-right:4px;">3D Point Cloud</label>
-                                <input type="checkbox" id="chk-eng-mode" style="margin:0 2px 0 0; width:13px; height:13px; cursor:pointer;" title="Enable Hardware Point Cloud & WS Stream">
-                                <span style="font-size:9px; color:#888; margin-left:2px;">(High CPU)</span>
-                            </div>
-                            <div class="actions">
-                                <button id="btn-save-layout" class="primary">SAVE</button>
-                                <button id="btn-cancel-layout">Undo</button>
-                                <button id="btn-freeze" class="warning">Freeze</button>
+                                <div class="row" id="row-point-cloud" style="display:none; justify-content: flex-end; margin-top: 4px;">
+                                    <label style="width:auto; text-align:right; color:#00e5ff; font-weight:bold; margin-right:4px;">3D Point Cloud</label>
+                                    <input type="checkbox" id="chk-eng-mode" style="margin:0 2px 0 0; width:13px; height:13px; cursor:pointer;" title="Enable Hardware Point Cloud & WS Stream">
+                                    <span style="font-size:9px; color:#888; margin-left:2px;">(High CPU)</span>
+                                </div>
+                                <div class="actions">
+                                    <button id="btn-save-layout" class="primary">SAVE</button>
+                                    <button id="btn-cancel-layout">Undo</button>
+                                    <button id="btn-freeze" class="warning">Freeze</button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -776,6 +842,16 @@ export class RadarUI {
                                 <button class="stepper" id="btn-opac-plus">+</button>
                             </div>
                             <span id="val-opacity" style="width:30px; text-align:right">100%</span>
+                        </div>
+                        <!-- ✨ [新增]: 防区基准线宽调节 (Zone Stroke) -->
+                        <div class="row" title="Zone Stroke / 防区线条基准粗细 (等比例联动缩放)">
+                            <label style="width:40px">Stroke</label>
+                            <div class="slider-row">
+                                <button class="stepper" id="btn-stroke-minus">-</button>
+                                <input type="range" id="set-stroke-range" min="0.2" max="2.0" step="0.1" class="slider">
+                                <button class="stepper" id="btn-stroke-plus">+</button>
+                            </div>
+                            <span id="val-stroke" style="width:30px; text-align:right">0.8px</span>
                         </div>
                         <div class="row" title="Backend polling & calculation interval (seconds)">
                             <label style="width:40px">Interval</label>
@@ -1084,6 +1160,7 @@ export class RadarUI {
             show(lPanel);
             active(bLayout, true);
             const innerParams = this.root.getElementById('layout-inner-params');
+            const layoutScroll = this.root.getElementById('layout-scroll-area');
             const btnFov = this.root.getElementById('btn-edit-fov');
             const btnWeb = this.root.getElementById('btn-radar-web');
             const btnOta = this.root.getElementById('btn-radar-ota');
@@ -1093,6 +1170,7 @@ export class RadarUI {
             const btnPause = this.root.getElementById('btn-pause-radar');
             const btnDel = this.root.getElementById('btn-del-radar');
             if (state.fov_edit_mode) {
+                if(layoutScroll) layoutScroll.style.display = 'none';
                 if(innerParams) innerParams.style.display = 'none'; 
                 show(zPanel); 
                 if (rowSelectType) rowSelectType.style.display = 'none';
@@ -1111,7 +1189,10 @@ export class RadarUI {
                 if(btnDel) btnDel.disabled = true;
                 const selRadarZoneType = this.root.getElementById('sel-radar-zone-type');
                 if(selRadarZoneType) selRadarZoneType.disabled = true; 
+                const btnZoneView = this.root.getElementById('btn-zone-view-mode');
+                if(btnZoneView) btnZoneView.disabled = true;
             } else {
+                if(layoutScroll) layoutScroll.style.display = 'flex';
                 if(innerParams) innerParams.style.display = 'block';
                 if(btnFov) { btnFov.innerText = "✏️"; btnFov.className = "warning"; }
                 if(btnWeb) btnWeb.disabled = false;
@@ -1123,6 +1204,9 @@ export class RadarUI {
                 if(btnDel) btnDel.disabled = false;
                 const selRadarZoneType = this.root.getElementById('sel-radar-zone-type');
                 if(selRadarZoneType) selRadarZoneType.disabled = false;
+                const btnZoneView = this.root.getElementById('btn-zone-view-mode');
+                if(btnZoneView) btnZoneView.disabled = false;
+                this.updateZoneViewModeBtn(state);
             }
             const btnAutoBlock = this.root.getElementById('btn-auto-block');
             if (btnAutoBlock) {
@@ -1394,7 +1478,11 @@ export class RadarUI {
                         const rType = parseInt(layout.radar_type || caps.radar_type || 1);
                         if (rType === 3 || caps.z) {
                             const safe_r = rName.toLowerCase().replace(/[\s-]/g, '_');
-                            const targetEntity = (key === 'fall_threshold_h') ? `number.${safe_r}_fall_height` : `number.${safe_r}_fall_duration`;
+                            let targetEntity = (key === 'fall_threshold_h') ? `number.${safe_r}_fall_height` : `number.${safe_r}_fall_duration`;
+                            if (state.hass && !state.hass.states[targetEntity]) {
+                                const alt = (key === 'fall_threshold_h') ? `number.${safe_r}_fall_height_threshold` : `number.${safe_r}_fall_confirmation_delay`;
+                                if (state.hass.states[alt]) targetEntity = alt;
+                            }
                             if (state.hass.states[targetEntity]) {
                                 state.hass.callService('number', 'set_value', {
                                     entity_id: targetEntity,
@@ -1406,7 +1494,7 @@ export class RadarUI {
                 }
             }
         };
-        const bindControl = (sliderId, labelId, btnMinusId, btnPlusId, configKey, defVal, unit) => {
+        const bindControl = (sliderId, labelId, btnMinusId, btnPlusId, configKey, defVal, unit, onChanged) => {
             const slider = this.root.getElementById(sliderId);
             const lbl = this.root.getElementById(labelId);
             const btnMinus = this.root.getElementById(btnMinusId);
@@ -1423,11 +1511,21 @@ export class RadarUI {
                 newValue = parseFloat(newValue.toFixed(decimals));
                 slider.value = newValue;
                 if (lbl) lbl.innerText = newValue.toFixed(decimals) + unit;
+                if (!state.data.global_config) state.data.global_config = {};
+                state.data.global_config[configKey] = newValue;
                 saveConfigBypass(configKey, newValue);
+                if (onChanged) onChanged(newValue);
             };
             if (btnMinus) btnMinus.onclick = () => updateAndSave(parseFloat(slider.value) - step);
             if (btnPlus) btnPlus.onclick = () => updateAndSave(parseFloat(slider.value) + step);
             slider.onchange = (e) => updateAndSave(parseFloat(e.target.value));
+            slider.oninput = (e) => {
+                const tempVal = parseFloat(parseFloat(e.target.value).toFixed(decimals));
+                if (lbl) lbl.innerText = tempVal.toFixed(decimals) + unit;
+                if (!state.data.global_config) state.data.global_config = {};
+                state.data.global_config[configKey] = tempVal;
+                if (onChanged) onChanged(tempVal);
+            };
         };
         const sliderOpac = this.root.getElementById('set-opacity-range');
         const lblOpac = this.root.getElementById('val-opacity');
@@ -1477,6 +1575,11 @@ export class RadarUI {
         bindControl('set-interval-range', 'val-interval', 'btn-int-minus', 'btn-int-plus', 'update_interval', 0.1, 's');
         bindControl('set-ema-range', 'val-ema', 'btn-ema-minus', 'btn-ema-plus', 'ema_smoothing_level', 7, ' Lvl');
         bindControl('set-merge-range', 'val-merge', 'btn-mrg-minus', 'btn-mrg-plus', 'merge_distance', 0.8, 'm');
+        bindControl('set-stroke-range', 'val-stroke', 'btn-stroke-minus', 'btn-stroke-plus', 'zone_stroke', 0.8, 'px', () => {
+            if (this.root.host && this.root.host.renderer) {
+                this.root.host.renderer.draw(state, this.root.host.config, this.root.host.state?.hass || state.hass);
+            }
+        });
         const selRenderMode = this.root.getElementById('sel-render-mode');
         if (selRenderMode) {
             let curMode = conf.target_render_mode || 'css';
@@ -1700,15 +1803,26 @@ export class RadarUI {
         let hVal = state.data[rName]?.layout?.mount_height !== undefined 
             ? parseFloat(state.data[rName].layout.mount_height) : 2.2;
         let safeNameH = rName.toLowerCase().replace(/ /g, "_").replace(/-/g, "_");
-        let hEntId = `number.${safeNameH}_radar_height`;
-        if (hass && !hass.states[hEntId]) {
-            const found = Object.keys(hass.states).find(k => 
-                k.startsWith(`number.${safeNameH}`) && 
-                (k.includes('radar_height') || k.includes('install_height') || k.includes('height'))
-            );
-            if (found) hEntId = found;
+        let hEntId = null;
+        const candidatesH = [
+            `number.${safeNameH}_install_height`,
+            `number.${safeNameH}_radar_height`,
+            `number.${safeNameH}_mount_height`
+        ];
+        if (hass) {
+            for (const c of candidatesH) {
+                if (hass.states[c]) { hEntId = c; break; }
+            }
+            if (!hEntId) {
+                const found = Object.keys(hass.states).find(k => 
+                    k.startsWith(`number.${safeNameH}`) && 
+                    !k.includes('fall') && 
+                    (k.includes('install_height') || k.includes('radar_height') || k.includes('mount_height'))
+                );
+                if (found) hEntId = found;
+            }
         }
-        if (hass && hass.states[hEntId] && hass.states[hEntId].state !== 'unavailable' && hass.states[hEntId].state !== 'unknown') {
+        if (hEntId && hass && hass.states[hEntId] && hass.states[hEntId].state !== 'unavailable' && hass.states[hEntId].state !== 'unknown') {
             const parsedH = parseFloat(hass.states[hEntId].state);
             if (!isNaN(parsedH)) hVal = parsedH;
         }
@@ -1795,6 +1909,7 @@ export class RadarUI {
             }
         }
         this.updateRadarActionButtons(state, hass);
+        this.updateFollowZonesUI(state);
     }
     updateRadarActionButtons(state, hass) {
         const sel = this.root.getElementById('sel-radar');
@@ -1899,6 +2014,76 @@ export class RadarUI {
         if (!currentVal && sel.options.length > 0) {
             sel.selectedIndex = 0;
             state.radar = sel.value; 
+        }
+        this.updateFollowZonesUI(state);
+    }
+    updateFollowZonesUI(state) {
+        const rowFollow = this.root.getElementById('row-follow-zones');
+        if (!rowFollow) return;
+        const sel = this.root.getElementById('sel-radar');
+        const rName = state.radar || (sel && sel.value) || '';
+        if (!rName || rName === 'rd_default') {
+            rowFollow.style.display = 'none';
+            return;
+        }
+        const rData = state.data && state.data[rName];
+        const caps = (rData && rData.capabilities) || {};
+        let isExclusive = !!(rData && (rData.capabilities || rData.device_pin || rData.radar_ip || rData.auth_passed));
+        if (!isExclusive && state.hass && state.hass.states) {
+            const safeName = rName.toLowerCase().replace(/ /g, "_").replace(/-/g, "_");
+            if (state.hass.states[`update.${safeName}_firmware`] || Object.keys(state.hass.states).some(k => k.startsWith(`update.${safeName}`) && k.includes('firmware'))) {
+                isExclusive = true;
+            }
+        }
+        const hasHwZones = !!(caps.max_hw_zones > 0 || caps.hw_blind_zone);
+        if (!isExclusive || !hasHwZones) {
+            rowFollow.style.display = 'none';
+            return;
+        }
+        rowFollow.style.display = 'flex';
+        const chk = this.root.getElementById('layout-follow-zones');
+        const isEnabled = !!state.followZonesEnabled;
+        if (chk && this.root.activeElement !== chk) {
+            chk.checked = isEnabled;
+        }
+        const groupChips = this.root.getElementById('group-follow-chips');
+        if (groupChips) {
+            groupChips.style.opacity = isEnabled ? '1' : '0.35';
+            groupChips.style.pointerEvents = isEnabled ? 'auto' : 'none';
+        }
+        if (!state.followZoneTypes) {
+            state.followZoneTypes = { hw_detect_zones: true, hw_block_zones: false, hw_stay_zones: false };
+        }
+        const updateChipStyle = (el, isActive, activeColor) => {
+            if (!el) return;
+            if (isActive) {
+                el.classList.add('active');
+                el.style.border = `1px solid ${activeColor}`;
+                el.style.background = activeColor === '#00e676' ? 'rgba(0,230,118,0.2)' : (activeColor === '#ff5252' ? 'rgba(255,82,82,0.2)' : 'rgba(224,64,251,0.2)');
+                el.style.color = activeColor;
+                el.style.fontWeight = 'bold';
+            } else {
+                el.classList.remove('active');
+                el.style.border = '1px solid var(--divider-color, rgba(128,128,128,0.3))';
+                el.style.background = 'rgba(128,128,128,0.08)';
+                el.style.color = 'var(--secondary-text-color, #888)';
+                el.style.fontWeight = 'normal';
+            }
+        };
+        const chipDet = this.root.getElementById('chip-follow-detect');
+        if (chipDet) {
+            chipDet.style.display = 'inline-flex';
+            updateChipStyle(chipDet, !!state.followZoneTypes.hw_detect_zones, '#00e676');
+        }
+        const chipBlk = this.root.getElementById('chip-follow-block');
+        if (chipBlk) {
+            chipBlk.style.display = (caps.max_hw_zones > 0 || caps.hw_blind_zone) ? 'inline-flex' : 'none';
+            updateChipStyle(chipBlk, !!state.followZoneTypes.hw_block_zones, '#ff5252');
+        }
+        const chipSty = this.root.getElementById('chip-follow-stay');
+        if (chipSty) {
+            chipSty.style.display = (caps.model === 'LD6004') ? 'inline-flex' : 'none';
+            updateChipStyle(chipSty, !!state.followZoneTypes.hw_stay_zones, '#e040fb');
         }
     }
 }
