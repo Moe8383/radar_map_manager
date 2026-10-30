@@ -66,6 +66,18 @@ For 3D radars capable of height sensing (such as LD6002B, LD6004, etc.), RMM pro
 
 ---
 
+### 6. ⚡ In-Memory High-Speed Tunnel & Dual Rendering Engines (Zero I/O & Zero Idle Drain)
+* **Zero Database I/O Overhead**: To safeguard your Home Assistant database (Recorder) and extend Raspberry Pi / SD card longevity, high-frequency (10Hz) radar coordinate streams are tunneled through an in-memory event bus directly to the frontend card. Zero redundant entity history writes means zero disk wear!
+* **Dual Rendering Engines**:
+  * **Native Hardware (CSS, Default & Recommended)**: Leverages browser compositor-thread GPU interpolation for zero algorithmic lag and responsive, stutter-free movement (100ms–1000ms adaptive tracking).
+  * **Kinematic Engine (Canvas)**: Features adaptive kinematic filtering, heading vectors, and optional dynamic motion trails.
+* **Ultra-Low Idle Power (Zero Idle Drain)**: When there is no active motion or when the map is idle, the card completely suspends background rendering. This achieves genuine 0% CPU/GPU idle overhead, drastically reducing heat and battery drain on wall-mounted smart control tablets and mobile devices.
+
+### 7. 🔐 Zero-Trust Local Security Architecture
+Upcoming RMM Dedicated Hardware integrates dynamic pairing PINs and hardware-grade encryption, ensuring your radar sensors connect securely and locally to Home Assistant without cloud dependencies or privacy leaks.
+
+---
+
 ## 🛠️ Supported Hardware
 
 RMM is compatible with any millimeter-wave radar integrated into Home Assistant (including 1D, 2D, and 3D variants), as long as they provide `DISTANCE` or `X/Y` coordinate data, such as `HLK-LD2450` `LD2460` `LD6001` `LD6002b` `LD6004`.
@@ -130,7 +142,7 @@ recorder:
 
 ### Step 2: Add Card
 1.  On your dashboard, click "Edit Dashboard" -> "Add Card".
-2.  Search for the **Radar Map Manager** card.
+2.  Search for **Radar Map Card** (or **Radar Map Manager**).
 3.  Or use the following YAML configuration:
 
 **Standalone Use (Manual Card):**
@@ -256,6 +268,14 @@ Click `Zones` in the panel to enter global zone management. Note: Zones here are
 
 ![ZONE](gif/zones_select.gif)
 
+* **Intuitive Touch & Whole-Zone Dragging**:
+  * **Whole Zone Dragging**: Tap inside any selected zone to move the entire zone at once without needing to drag individual points.
+  * **Touchscreen Anti-Occlusion Remote Dragging**: When fine-tuning on mobile phones or tablets, your fingers will never block your sight! Tap to select a vertex or whole zone, then drag anywhere in the blank canvas—the target smoothly follows your touch relative to its position, making wall and furniture alignment effortless.
+  * **Quick Tap to Deselect**: A quick tap in empty canvas space cleanly cancels the current selection.
+* **Multi-Level View Toggle & Micro-Capsule Badges (View Mode & LOD)**:
+  * **View Mode Cycling**: Tap the quick view toggle button to cycle across modes: **🎯 Focus Active Type** (highlights selected zone type and dims others), **🌐 All Subtle Mode** (shows all zones crisply with minimal distraction), and **👁️‍🗨️ Pure & Hidden** (hides all zone polygons for an ultra-clean map).
+  * **Anti-Collision Micro-Badges**: Zone labels use semi-transparent micro-capsule pill badges, avoiding text collisions and visual clutter.
+
 #### 1. Detect Trigger Zones
 
 * Editing operations are the same as Monitor zones.
@@ -301,6 +321,9 @@ Click `Set` in the panel for global parameters.
 
 * `Calibrate X`: Set the horizontal real-world physical distance by picking points on the floor plan.
 * `Calibrate Y`: Set the vertical real-world physical distance by picking points on the floor plan.
+
+* `Opacity`: Global panel opacity slider (adjusts transparency for Layout, Zones, and Set panels) to view the floor plan beneath.
+* `Stroke`: Zone outline stroke width slider, with proportional scaling across hardware and monitor zones to maintain a balanced visual hierarchy.
 
 * `Interval`: Backend polling and calculation refresh interval (in seconds).
 * `Merge`: Radar target fusion distance (in meters). Targets from different radars within this distance will be merged into one.
